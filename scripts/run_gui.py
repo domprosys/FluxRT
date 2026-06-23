@@ -10,7 +10,7 @@ import numpy as np
 from PIL import Image
 
 from PySide6.QtCore import Qt, QTimer, Signal, QObject, Slot
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtGui import QImage, QPixmap, QShortcut, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -310,6 +310,12 @@ class MainWindow(QMainWindow):
         self._lip_transfer_in_config = False
         self._lip_active = False
         self._sp_loading = False
+
+        # Prompt-cycle mode: prompts pre-encoded at startup, switched on a timer.
+        self._prompt_cycle: list = []
+        self._cycle_interval_ms = 6000
+        self._cycle_index = 0
+        self._cycle_timer: QTimer | None = None
         self._cfg_w = 576
         self._cfg_h = 320
 
@@ -317,6 +323,11 @@ class MainWindow(QMainWindow):
         self._latest_output: np.ndarray | None = None
         self._latest_output_bgr: np.ndarray | None = None
         self._frame_lock = threading.Lock()
+
+        # Temporal input smoothing (EMA): blended = alpha*new + (1-alpha)*history.
+        # alpha=1.0 disables it; lower = dreamier ghost-trails on motion.
+        self._smooth_alpha = 1.0
+        self._smoothed_frame: np.ndarray | None = None
 
         self._capture_thread: threading.Thread | None = None
         self._capture_stop = threading.Event()
@@ -334,6 +345,11 @@ class MainWindow(QMainWindow):
 
         self._sig = _Signals()
         self._build_ui()
+
+        # Fullscreen toggle: F11 or F to toggle, Esc to exit.
+        QShortcut(QKeySequence("F11"), self, activated=self._toggle_fullscreen)
+        QShortcut(QKeySequence("F"), self, activated=self._toggle_fullscreen)
+        QShortcut(QKeySequence("Escape"), self, activated=self._exit_fullscreen)
 
         # Connect cross-thread signals after UI exists
         self._sig.launch_capture.connect(self._on_launch_capture)
@@ -365,11 +381,16 @@ class MainWindow(QMainWindow):
         video_layout.setContentsMargins(6, 6, 6, 6)
         video_layout.setSpacing(6)
 
-        self._input_lbl = self._make_video_panel(video_layout, "Input")
-        self._output_lbl = self._make_video_panel(video_layout, "Output")
+        self._input_panel, self._input_lbl = self._make_video_panel(
+            video_layout, "Input"
+        )
+        self._output_panel, self._output_lbl = self._make_video_panel(
+            video_layout, "Output"
+        )
 
         # ── control panel ─────────────────────────────────────────────────────
         ctrl_area = QWidget()
+        self._ctrl_area = ctrl_area
         ctrl_area.setObjectName("ctrl_area")
         ctrl_layout = QGridLayout(ctrl_area)
         ctrl_layout.setContentsMargins(14, 10, 14, 12)
@@ -486,6 +507,9 @@ class MainWindow(QMainWindow):
         self._vcam_btn.setEnabled(False)
         self._vcam_btn.clicked.connect(self._toggle_vcam)
         btn_l.addWidget(self._vcam_btn)
+        self._fs_btn = QPushButton("Fullscreen (F11)")
+        self._fs_btn.clicked.connect(self._toggle_fullscreen)
+        btn_l.addWidget(self._fs_btn)
         self._vcam_err_lbl = QLabel()
         self._vcam_err_lbl.setObjectName("err")
         btn_l.addWidget(self._vcam_err_lbl)
@@ -509,7 +533,9 @@ class MainWindow(QMainWindow):
         lay.setSpacing(6)
         return w
 
-    def _make_video_panel(self, parent_layout: QHBoxLayout, title: str) -> QLabel:
+    def _make_video_panel(
+        self, parent_layout: QHBoxLayout, title: str
+    ) -> tuple[QWidget, QLabel]:
         panel = QWidget()
         panel.setObjectName("video_panel")
         layout = QVBoxLayout(panel)
@@ -532,7 +558,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(img_lbl)
 
         parent_layout.addWidget(panel)
-        return img_lbl
+        panel._title_lbl = title_lbl
+        return panel, img_lbl
 
     # ── config ─────────────────────────────────────────────────────────────────
 
@@ -552,7 +579,14 @@ class MainWindow(QMainWindow):
             )
             self._ref_widget.setVisible(self._use_ref_image)
             self._lip_btn.setEnabled(self._lip_transfer_in_config)
+            self._prompt_cycle = cfg.get("prompt_cycle", []) or []
+            self._cycle_interval_ms = int(cfg.get("prompt_cycle_interval_s", 6) * 1000)
+            self._smooth_alpha = float(cfg.get("input_smoothing_alpha", 1.0))
             default_prompt = cfg.get("default_prompt", "")
+            if self._prompt_cycle:
+                # Cycle mode: prompt box mirrors the active cycle prompt (read-only).
+                default_prompt = self._prompt_cycle[0]
+                self._prompt_edit.setReadOnly(True)
             if default_prompt and not self._prompt_edit.toPlainText().strip():
                 self._prompt_edit.blockSignals(True)
                 self._prompt_edit.setPlainText(default_prompt)
@@ -586,6 +620,63 @@ class MainWindow(QMainWindow):
             return None
 
     # ── prompt / reference ─────────────────────────────────────────────────────
+
+    # ── fullscreen ───────────────────────────────────────────────────────────────
+
+    def _toggle_fullscreen(self) -> None:
+        if self.isFullScreen():
+            self._exit_fullscreen()
+        else:
+            # Show ONLY the processed output: hide controls, the input panel, and
+            # the "Output" caption. Status bar stays (shows the active cycle prompt).
+            self._ctrl_area.hide()
+            self._input_panel.hide()
+            self._output_panel._title_lbl.hide()
+            self.showFullScreen()
+            self._fs_btn.setText("Exit Fullscreen (Esc)")
+
+    def _exit_fullscreen(self) -> None:
+        if self.isFullScreen():
+            self.showNormal()
+        self._ctrl_area.show()
+        self._input_panel.show()
+        self._output_panel._title_lbl.show()
+        self._fs_btn.setText("Fullscreen (F11)")
+
+    # ── prompt cycle ─────────────────────────────────────────────────────────────
+
+    def _start_cycle_timer(self) -> None:
+        if self._cycle_timer is None:
+            self._cycle_timer = QTimer(self)
+            self._cycle_timer.timeout.connect(self._advance_cycle)
+        self._cycle_index = 0
+        self._cycle_timer.start(self._cycle_interval_ms)
+        log(f"Prompt cycle started: {len(self._prompt_cycle)} prompts, "
+            f"{self._cycle_interval_ms/1000:.0f}s each")
+
+    def _stop_cycle_timer(self) -> None:
+        if self._cycle_timer is not None:
+            self._cycle_timer.stop()
+
+    def _advance_cycle(self) -> None:
+        # Wait until the model is ready (prompts pre-encoded) before switching.
+        if self._sp is None:
+            return
+        try:
+            if not self._sp.is_ready():
+                return
+        except Exception:
+            return
+        self._cycle_index = (self._cycle_index + 1) % len(self._prompt_cycle)
+        prompt = self._prompt_cycle[self._cycle_index]
+        self._sp.set_prompt_index(self._cycle_index)  # instant: swaps cached embeds
+        self._prompt_edit.blockSignals(True)
+        self._prompt_edit.setPlainText(prompt)
+        self._prompt_edit.blockSignals(False)
+        self.statusBar().showMessage(
+            f"Cycle [{self._cycle_index + 1}/{len(self._prompt_cycle)}]: {prompt[:60]}"
+        )
+        log(f"cycle -> [{self._cycle_index}] {prompt}")
 
     def _on_prompt_changed(self) -> None:
         prompt = self._prompt_edit.toPlainText()
@@ -689,7 +780,10 @@ class MainWindow(QMainWindow):
             if self._use_int8:
                 sp.enable_quantization()
             sp.start()
-            sp.set_prompt(prompt)
+            # In cycle mode the subprocess pre-encodes the cycle prompts and starts
+            # at index 0 — don't trigger an extra live encode here.
+            if not self._prompt_cycle:
+                sp.set_prompt(prompt)
             self._sp = sp
             self._input_tensor = sp.get_input_tensor()
             self._output_tensor = sp.get_output_tensor()
@@ -732,6 +826,8 @@ class MainWindow(QMainWindow):
         log(f"Capture started: {status_msg}")
         self._start_spout_output()
         self._start_vcam()
+        if self._prompt_cycle:
+            self._start_cycle_timer()
 
     @Slot(str)
     def _on_sp_error(self, _err: str) -> None:
@@ -741,6 +837,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Model error — see terminal")
 
     def _stop_capture(self) -> None:
+        self._stop_cycle_timer()
         self._capture_stop.set()
         if self._vcam_cam is not None:
             self._stop_vcam()
@@ -761,9 +858,24 @@ class MainWindow(QMainWindow):
 
     # ── capture loop ───────────────────────────────────────────────────────────
 
+    def _smooth_input(self, frame: np.ndarray) -> np.ndarray:
+        """Exponential moving average over input frames for a dreamy ghost-trail.
+        alpha=1.0 → passthrough; lower → more smoothing/trailing on motion."""
+        if self._smooth_alpha >= 1.0:
+            return frame
+        f = frame.astype(np.float32)
+        if self._smoothed_frame is None:
+            self._smoothed_frame = f
+        else:
+            self._smoothed_frame = (
+                self._smooth_alpha * f + (1.0 - self._smooth_alpha) * self._smoothed_frame
+            )
+        return np.ascontiguousarray(self._smoothed_frame.astype(np.uint8))
+
     def _capture_loop(self, cap) -> None:
         h = self._resolution["height"]
         w = self._resolution["width"]
+        self._smoothed_frame = None  # reset trail history on each capture start
         try:
             while not self._capture_stop.is_set():
                 ok, frame = cap.read()
@@ -772,6 +884,7 @@ class MainWindow(QMainWindow):
                     self._sig.camera_error.emit()
                     break
                 cropped = crop_maximal_rectangle(frame, h, w)
+                cropped = self._smooth_input(cropped)
                 with _sp_lock:
                     self._input_tensor.copy_from(cropped)
                     output_bgr = self._output_tensor.to_numpy()
@@ -985,6 +1098,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         log("Shutting down")
+        self._stop_cycle_timer()
         self._poll_timer.stop()
         self._capture_stop.set()
         self._vcam_stop.set()

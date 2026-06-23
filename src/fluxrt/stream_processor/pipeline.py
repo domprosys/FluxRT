@@ -822,7 +822,10 @@ class Flux2KleinPipeline(DiffusionPipeline, Flux2LoraLoaderMixin):
         else:
             batch_size = prompt_embeds.shape[0]
 
-        device = self._execution_device
+        # Use the transformer's device explicitly. In low-VRAM mode the text
+        # encoder lives on CPU, which would make _execution_device resolve to cpu
+        # and place latents/generator on the wrong device.
+        device = next(self.transformer.parameters()).device
         profile("2")
 
         # 3. prepare text embeddings

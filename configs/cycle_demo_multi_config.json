@@ -1,0 +1,32 @@
+{
+    "default_prompt" : "Transform everyone in the frame into fierce dragons: cover each person's face, neck, and shoulders in iridescent emerald scales, give each curved black horns swept back, glowing amber reptilian eyes, smoke curling from the nostrils, and armored scaled plating across the chest and shoulders. Keep everyone's poses, head positions, and the framing. Replace the background with a smoldering volcanic cavern glowing with rivers of lava. Dark fantasy, dramatic rim lighting.",
+    "default_steps" : 2,
+    "default_seed" : 52,
+    "models_path" : "FLUX.2-klein-4B",
+    "int8_models_path": "FLUX.2-klein-4B-int8",
+    "text_encoder_device": "cpu",
+    "text_encoder_cpu_dtype": "float32",
+    "prompt_cycle_interval_s": 15,
+    "prompt_cycle": [
+        "Transform everyone in the frame into fierce dragons: cover each person's face, neck, and shoulders in iridescent emerald scales, give each curved black horns swept back, glowing amber reptilian eyes, smoke curling from the nostrils, and armored scaled plating across the chest and shoulders. Keep everyone's poses, head positions, and the framing. Replace the background with a smoldering volcanic cavern glowing with rivers of lava. Dark fantasy, dramatic rim lighting.",
+        "Turn everyone in the frame into snarling monsters: warp each person's face into cracked ashen skin with jagged fangs, a gaping maw, bloodshot eyes, and gnarled bony horns, and extend the cracked grey hide over each one's hulking muscular shoulders and chest. Keep everyone's poses, head angles, and the composition. Replace the background with a ruined gothic crypt shrouded in green fog. Horror creature design, moody low-key lighting.",
+        "Transform everyone in the frame into feral werewolves: cover each person's face and entire upper body in thick grey fur, extend each snout, add piercing yellow eyes, bared fangs, pointed ears, and broad furry muscular shoulders. Keep everyone's poses, head angles, and the framing. Replace the background with a moonlit pine forest under a huge full moon. Dark fantasy, cold silver rim light, drifting mist.",
+        "Turn everyone in the frame into superheroes: cover each person's head and face with a sleek metallic helmet and glowing visor mask, and clad each one's shoulders and chest in a matching armored superhero suit with a glowing chest emblem. Keep everyone's poses, head positions, and the framing. Replace the background with a glowing futuristic city skyline at dusk. Comic-book cinematic style, dramatic teal and orange lighting.",
+        "Change everyone in the frame into superheroes: cover each person's face with a glossy red-and-gold armored mask and helmet with glowing eyes, and clad each one's shoulders and chest in a sculpted red-and-gold hero suit. Keep everyone's poses, head positions, and the framing. Replace the background with an exploding city skyline at night, sparks and debris flying. Dynamic comic-book style, bold dramatic lighting.",
+        "Transform everyone in the frame into blazing phoenixes: cover each person's face, neck, and shoulders in fiery orange and gold feathers, give each glowing ember eyes and a sharp golden beak-like nose, with flames rising and feathered plumage across the chest. Keep everyone's poses, head positions, and the framing. Replace the background with a sky of fire and swirling embers. Epic fantasy, warm firelight.",
+        "Turn everyone in the frame into ancient stone golems: replace the skin of each person's face, neck, and shoulders with cracked mossy granite, add molten lava glowing through the fissures, and massive rocky boulder-like shoulders. Keep everyone's poses and the framing. Replace the background with a crumbling ancient stone temple. Fantasy concept art, dramatic side lighting, drifting dust and embers."
+    ],
+    "resolution" : {
+        "height" : 288,
+        "width" : 512
+    },
+    "compile_models": true,
+    "enable_spatial_cache": true,
+    "enable_tiny_vae": false,
+    "enable_flow_upscaler": false,
+    "enable_int8_quantization": true,
+    "target_fps":null,
+    "interpolation_exp": 2,
+    "use_reference_image": false,
+    "logging": true
+}

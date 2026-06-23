@@ -79,6 +79,10 @@ class StreamProcessor:
     def set_prompt(self, prompt: str) -> None:
         self.model_inference_subprocess.set_param(name="prompt", value=prompt)
 
+    def set_prompt_index(self, idx: int) -> None:
+        """Switch to a pre-encoded prompt from config['prompt_cycle'] (instant)."""
+        self.model_inference_subprocess.set_prompt_index(idx)
+
     def set_steps(self, steps: int) -> None:
         self.model_inference_subprocess.set_param(name="steps", value=steps)
 

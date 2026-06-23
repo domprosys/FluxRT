@@ -1,0 +1,22 @@
+{
+    "default_prompt": "Turn this into oil on canvas art in style of Wassily Kandinsky.",
+    "default_steps": 2,
+    "default_seed": 52,
+    "models_path": "FLUX.2-klein-4B",
+    "int8_models_path": "FLUX.2-klein-4B-int8",
+    "text_encoder_device": "cpu",
+    "text_encoder_cpu_dtype": "float32",
+    "resolution": {
+        "height": 256,
+        "width": 448
+    },
+    "compile_models": false,
+    "enable_spatial_cache": true,
+    "enable_tiny_vae": false,
+    "enable_flow_upscaler": false,
+    "enable_int8_quantization": true,
+    "target_fps": null,
+    "interpolation_exp": 2,
+    "use_reference_image": false,
+    "logging": true
+}

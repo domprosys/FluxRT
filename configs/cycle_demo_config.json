@@ -1,0 +1,32 @@
+{
+    "default_prompt" : "Transform the person into a fierce dragon: cover their face, neck, and shoulders in iridescent emerald scales, add curved black horns swept back, glowing amber reptilian eyes, smoke curling from the nostrils, and armored scaled plating across the chest and shoulders. Keep the same pose, head position, and framing. Replace the background with a smoldering volcanic cavern glowing with rivers of lava. Dark fantasy, dramatic rim lighting.",
+    "default_steps" : 2,
+    "default_seed" : 52,
+    "models_path" : "FLUX.2-klein-4B",
+    "int8_models_path": "FLUX.2-klein-4B-int8",
+    "text_encoder_device": "cpu",
+    "text_encoder_cpu_dtype": "float32",
+    "prompt_cycle_interval_s": 15,
+    "input_smoothing_alpha": 0.4,
+    "prompt_cycle": [
+        "Transform the person into a fierce dragon: cover their face, neck, and shoulders in iridescent emerald scales, add curved black horns swept back, glowing amber reptilian eyes, smoke curling from the nostrils, and armored scaled plating across the chest and shoulders. Keep the same pose, head position, and framing. Replace the background with a smoldering volcanic cavern glowing with rivers of lava. Dark fantasy, dramatic rim lighting.",
+        "Turn the person into a snarling monster: warp their face into cracked ashen skin with jagged fangs, a gaping maw, bloodshot eyes, and gnarled bony horns, and extend the cracked grey hide over their hulking muscular shoulders and chest. Keep the same pose, head angle, and composition. Replace the background with a ruined gothic crypt shrouded in green fog. Horror creature design, moody low-key lighting.",
+        "Turn the person into a superhero: cover their head and face with a sleek metallic helmet and glowing visor mask, and clad their shoulders and chest in a matching armored superhero suit with a glowing chest emblem. Keep the exact same pose, head position, and framing. Replace the background with a glowing futuristic city skyline at dusk. Comic-book cinematic style, dramatic teal and orange lighting.",
+        "Turn the person into an armored knight: cover their head with an ornate visored steel helm, and clad their shoulders and chest in polished plate armor engraved with gold trim. Keep the exact same pose, head position, and framing. Replace the background with a grand torch-lit castle hall draped in banners. Epic fantasy, dramatic warm lighting, cinematic.",
+        "Turn the person into a chrome cyborg: replace the skin of their face, neck, and shoulders with sleek polished metal plating and exposed mechanical joints, add a glowing blue optic eye and thin seams of light across the plating. Keep the same pose, head position, and framing. Replace the background with a neon-lit futuristic server hall. Sci-fi cinematic, cool blue rim lighting, highly detailed.",
+        "Turn the person into an ancient stone golem: replace the skin of their face, neck, and shoulders with cracked mossy granite, add molten lava glowing through the fissures, and massive rocky boulder-like shoulders. Keep the same pose and framing. Replace the background with a crumbling ancient stone temple. Fantasy concept art, dramatic side lighting, drifting dust and embers."
+    ],
+    "resolution" : {
+        "height" : 288,
+        "width" : 512
+    },
+    "compile_models": true,
+    "enable_spatial_cache": true,
+    "enable_tiny_vae": false,
+    "enable_flow_upscaler": false,
+    "enable_int8_quantization": true,
+    "target_fps":null,
+    "interpolation_exp": 2,
+    "use_reference_image": false,
+    "logging": true
+}

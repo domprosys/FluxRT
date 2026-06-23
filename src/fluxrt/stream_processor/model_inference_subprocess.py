@@ -65,6 +65,15 @@ class ModelInferenceSubprocess:
     def init_process_state(self):
         self.device = "cuda"
         self.dtype = torch.bfloat16
+        # Device the Qwen3 text encoder lives on. "cpu" offloads it to system RAM
+        # (low-VRAM mode): it only runs on prompt change, so the per-frame denoise
+        # loop is unaffected and ~4.5GB of GPU VRAM is freed.
+        self.text_encoder_device = self.config.get("text_encoder_device", "cuda")
+        # Optional hard VRAM cap (fraction of total device memory) — lets you
+        # simulate a smaller GPU on a bigger one, e.g. 0.5 ≈ 12GB on a 24GB card.
+        frac = self.config.get("cuda_memory_fraction")
+        if frac:
+            torch.cuda.set_per_process_memory_fraction(float(frac), 0)
         self.process_state = {
             "prompt": self.config["default_prompt"],
             "steps": self.config["default_steps"],
@@ -85,7 +94,8 @@ class ModelInferenceSubprocess:
 
         self.text_encoder = Qwen3ForCausalLM.from_pretrained(
             f"{models_path}/text_encoder", local_files_only=True
-        ).to(device, dtype)
+        ).to(self.text_encoder_device, dtype)
+        self.text_encoder.eval()
         self.tokenizer = Qwen2TokenizerFast.from_pretrained(
             f"{models_path}/tokenizer", local_files_only=True, device=device
         )
@@ -109,23 +119,46 @@ class ModelInferenceSubprocess:
             f"{models_path}/scheduler", local_files_only=True, device=self.device
         )
 
-        config = AutoConfig.from_pretrained(
-            f"{int8_models_path}/text_encoder", local_files_only=True
-        )
-        with init_empty_weights():
-            text_encoder = Qwen3ForCausalLM(config)
+        if self.text_encoder_device == "cpu":
+            # Low-VRAM mode: keep the full Qwen3-4B encoder in system RAM (the base,
+            # non-quantized weights — best conditioning quality) and run it on CPU
+            # only when the prompt changes. Frees ~4.5GB of GPU VRAM.
+            # Default bf16 (~7.5GB RAM). fp32 is ~2x faster to encode but uses
+            # ~15GB RAM — risky if any process is orphaned, so it's opt-in via
+            # text_encoder_cpu_dtype. Embeddings are cast to the transformer
+            # dtype when moved to the GPU regardless.
+            cpu_dtype = getattr(
+                torch, self.config.get("text_encoder_cpu_dtype", "bfloat16")
+            )
+            text_encoder = Qwen3ForCausalLM.from_pretrained(
+                f"{models_path}/text_encoder", local_files_only=True
+            )
+            text_encoder.eval()
+            text_encoder.to("cpu", dtype=cpu_dtype)
+            self.text_encoder = text_encoder
+            self.tokenizer = Qwen2TokenizerFast.from_pretrained(
+                f"{models_path}/tokenizer", local_files_only=True
+            )
+        else:
+            config = AutoConfig.from_pretrained(
+                f"{int8_models_path}/text_encoder", local_files_only=True
+            )
+            with init_empty_weights():
+                text_encoder = Qwen3ForCausalLM(config)
 
-        with open(f"{int8_models_path}/text_encoder/quanto_qmap.json", "r") as f:
-            qmap = json.load(f)
-        state_dict = load_file(f"{int8_models_path}/text_encoder/model.safetensors")
-        requantize(text_encoder, state_dict=state_dict, quantization_map=qmap)
-        text_encoder.eval()
-        text_encoder.to(self.device, dtype=self.dtype)
-        self.text_encoder = text_encoder
+            with open(f"{int8_models_path}/text_encoder/quanto_qmap.json", "r") as f:
+                qmap = json.load(f)
+            state_dict = load_file(
+                f"{int8_models_path}/text_encoder/model.safetensors"
+            )
+            requantize(text_encoder, state_dict=state_dict, quantization_map=qmap)
+            text_encoder.eval()
+            text_encoder.to(self.device, dtype=self.dtype)
+            self.text_encoder = text_encoder
 
-        self.tokenizer = Qwen2TokenizerFast.from_pretrained(
-            f"{int8_models_path}/tokenizer", local_files_only=True
-        )
+            self.tokenizer = Qwen2TokenizerFast.from_pretrained(
+                f"{int8_models_path}/tokenizer", local_files_only=True
+            )
 
     def load_models(self):
         self.interpolation_model = IFNet()
@@ -200,7 +233,18 @@ class ModelInferenceSubprocess:
             subprocess_config=self.config,
             upscaler_pipeline=self.upscaler_pipe,
         )
-        self.pipe.to(self.device)
+        if self.text_encoder_device == self.device:
+            self.pipe.to(self.device)
+        else:
+            # Low-VRAM offload: move the GPU modules explicitly and keep the text
+            # encoder on CPU. Calling pipe.to(device) would drag the CPU-resident
+            # encoder onto the GPU — a transient spike (≈15GB fp32 / 7.5GB bf16)
+            # that the caching allocator never releases, inflating reserved memory
+            # and OOM-ing a small card during load.
+            self.transformer.to(self.device)
+            self.vae.to(self.device)
+            self.text_encoder.to(self.text_encoder_device)
+            torch.cuda.empty_cache()
 
         if self.config.get("use_lora", False):
             self.pipe.load_lora_weights(self.config.get("lora_weights_path", ""))
@@ -213,15 +257,54 @@ class ModelInferenceSubprocess:
                 models_dir=lp_cfg["models_dir"]
             )
 
-    def update_prompt_embeds(self, prompt):
-        self.prompt_embeds, text_ids = self.pipe.encode_prompt(
+    def _encode_prompt_to_gpu(self, prompt):
+        # Encode on whatever device the text encoder lives on (CPU in low-VRAM
+        # mode), then move the small (~8MB) embeddings to the transformer's device.
+        _t0 = time.time()
+        embeds, _ = self.pipe.encode_prompt(
             prompt=prompt,
-            device=self.device,
+            device=self.text_encoder_device,
             num_images_per_prompt=1,
             max_sequence_length=512,
             text_encoder_out_layers=(9, 18, 27),
         )
+        embeds = embeds.to(self.device, self.dtype)
+        if self.config.get("logging", False):
+            print(
+                f"[FluxRT] encoded prompt on {self.text_encoder_device} in "
+                f"{time.time() - _t0:.2f}s: {prompt[:50]!r}",
+                flush=True,
+            )
+        return embeds
+
+    def update_prompt_embeds(self, prompt):
+        self.prompt_embeds = self._encode_prompt_to_gpu(prompt)
         self.update_controller.reset_cache()
+
+    def precompute_prompt_cycle(self):
+        """Pre-encode the config's prompt_cycle list once at startup so that
+        cycling between them later is instant (no per-switch CPU re-encode)."""
+        cycle = self.config.get("prompt_cycle") or []
+        self.cycle_embeds = [self._encode_prompt_to_gpu(p) for p in cycle]
+        if self.cycle_embeds:
+            self.cycle_index = 0
+            self.prompt_embeds = self.cycle_embeds[0]
+            self.update_controller.reset_cache()
+            print(
+                f"[FluxRT] pre-encoded {len(self.cycle_embeds)} cycle prompts",
+                flush=True,
+            )
+
+    def _apply_prompt_index(self, idx: int) -> None:
+        """[child process] Instantly switch to a pre-encoded cycle prompt."""
+        if 0 <= idx < len(getattr(self, "cycle_embeds", [])):
+            self.cycle_index = idx
+            self.prompt_embeds = self.cycle_embeds[idx]
+            self.update_controller.reset_cache()
+
+    def set_prompt_index(self, idx: int) -> None:
+        """[main process] Queue a switch to a pre-encoded cycle prompt."""
+        self.command_queue.put(("set_prompt_index", idx))
 
     def init_shared_tensors(self):
         height, width = self.resolution["height"], self.resolution["width"]
@@ -249,7 +332,13 @@ class ModelInferenceSubprocess:
         self.init_process_state()
         self.init_shared_tensors()
         self.load_models()
-        self.update_prompt_embeds(self.process_state["prompt"])
+        self.cycle_embeds = []
+        self.cycle_index = 0
+        if self.config.get("prompt_cycle"):
+            # Encode all cycle prompts once now; switching is then instant.
+            self.precompute_prompt_cycle()
+        else:
+            self.update_prompt_embeds(self.process_state["prompt"])
         self.previous_frame = None
 
         if self.config.get("use_reference_image", False):
@@ -353,6 +442,9 @@ class ModelInferenceSubprocess:
 
                 elif cmd == "set_lip_transfer":
                     self.lip_active = payload
+
+                elif cmd == "set_prompt_index":
+                    self._apply_prompt_index(payload)
 
         except Empty:
             pass
