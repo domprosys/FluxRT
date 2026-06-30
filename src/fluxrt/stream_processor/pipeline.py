@@ -915,9 +915,14 @@ class Flux2KleinPipeline(DiffusionPipeline, Flux2LoraLoaderMixin):
             if sigmas is None
             else sigmas
         )
+        # When the scheduler generates its own sigma spacing (flow / beta /
+        # karras / exponential), don't force an explicit linspace schedule.
+        _sched_cfg = self.scheduler.config
         if (
-            hasattr(self.scheduler.config, "use_flow_sigmas")
-            and self.scheduler.config.use_flow_sigmas
+            getattr(_sched_cfg, "use_flow_sigmas", False)
+            or getattr(_sched_cfg, "use_beta_sigmas", False)
+            or getattr(_sched_cfg, "use_karras_sigmas", False)
+            or getattr(_sched_cfg, "use_exponential_sigmas", False)
         ):
             sigmas = None
         image_seq_len = latents.shape[1]
@@ -1079,7 +1084,9 @@ class Flux2KleinPipeline(DiffusionPipeline, Flux2LoraLoaderMixin):
             self.vae.bn.running_var.view(1, -1, 1, 1) + self.vae.config.batch_norm_eps
         ).to(latents.device, latents.dtype)
 
-        if self.upscaler_pipeline is not None:
+        if self.upscaler_pipeline is not None and getattr(
+            self, "_flow_upscale_on", True
+        ):
             latents = self._unpatchify_latents(latents)
             latents = self.upscaler_pipeline(latents, generator=generator)
             latents = self._patchify_latents(latents)

@@ -1,0 +1,37 @@
+{
+    "default_prompt" : "Turn everyone in the frame into chrome cyborgs: replace the skin of each person's face, neck, and shoulders with sleek polished metal plating and exposed mechanical joints, and give each a glowing blue optic eye and thin seams of light across the plating. Keep everyone's poses, head positions, and the framing. Replace the background with a neon-lit futuristic server hall. Sci-fi cinematic, cool blue rim lighting, highly detailed.",
+    "default_steps" : 2,
+    "default_seed" : 52,
+    "models_path" : "FLUX.2-klein-4B",
+    "int8_models_path": "FLUX.2-klein-4B-int8",
+    "text_encoder_device": "cpu",
+    "text_encoder_cpu_dtype": "float32",
+    "cache_prompt_embeds": true,
+    "show_virtual_cam": false,
+    "show_advanced_controls": true,
+    "prompt_cycle_interval_s": 30,
+    "input_smoothing_alpha": 0.3,
+    "prompt_cycle": [
+        "Turn everyone in the frame into chrome cyborgs: replace the skin of each person's face, neck, and shoulders with sleek polished metal plating and exposed mechanical joints, and give each a glowing blue optic eye and thin seams of light across the plating. Keep everyone's poses, head positions, and the framing. Replace the background with a neon-lit futuristic server hall. Sci-fi cinematic, cool blue rim lighting, highly detailed.",
+        "Turn everyone in the frame into cel-shaded cartoon monsters: warp each person's face into a fanged, big-eyed creature with bold flat color fills, hard cel-shading, and thick black ink outlines, and cover each one's shoulders and chest in cracked monstrous hide. Keep everyone's poses, head positions, and the framing. Replace the background with a stylized haunted forest in flat graphic colors. Modern cel-shaded animation style, clean line art.",
+        "Turn everyone in the frame into cel-shaded comic superheroes: give each person a sleek masked superhero suit in bold flat colors with hard cel-shading, halftone-dot shadows, thick ink outlines, and a glowing chest emblem. Keep everyone's poses, head positions, and the framing. Replace the background with a dynamic comic skyline of halftone dots and motion lines. Spider-Verse-style cel-shaded comic art.",
+        "Turn everyone in the frame into ancient stone golems: replace the skin of each person's face, neck, and shoulders with cracked mossy granite, add molten lava glowing through the fissures, and massive rocky boulder-like shoulders. Keep everyone's poses and the framing. Replace the background with a crumbling ancient stone temple. Fantasy concept art, dramatic side lighting, drifting dust and embers.",
+        "Turn everyone in the frame into anime-style demons: give each person's face sharp anime features, glowing eyes, fangs, and small horns, with cel-shaded skin in an unnatural hue and spiky stylized hair, and extend monstrous detailing across each one's shoulders. Keep everyone's poses, head positions, and the framing. Replace the background with a moody anime night sky and a huge moon. Modern anime film style, dramatic cel shading.",
+        "Turn everyone in the frame into neon pixel-art zombies: render each person's face, hair, and shoulders as glowing low-res pixels of a rotting zombie - sunken eyes, gaunt decayed skin, exposed teeth - on a dark palette dominated by bloody crimson red with a hot scarlet glow, hard outlines, and dithered light. Keep everyone's poses, head positions, and the framing. Replace the background with a pixelated blood-red neon city street at night. Retro 8/16-bit video-game style, CRT scanlines, vibrant crimson pixels.",
+        "Turn everyone in the frame into blocky Minecraft characters: rebuild each person's head, face, and shoulders out of large cubic voxel blocks with simple low-resolution 16x16 pixel-art skin textures, a boxy square head, blocky features, and flat Minecraft-style shading. Keep everyone's poses, head positions, and the framing. Replace the background with a blocky Minecraft world - cubic grass and dirt blocks, pixel trees, and a bright pixelated blue sky. Voxel video-game style, sharp cubic edges, low-res block textures.",
+        "Turn everyone in the frame into black-and-white manga monsters: render each person's face and shoulders as high-contrast ink line art with screentone shading, cross-hatching, fangs, and wild eyes - monochrome, black ink on white. Keep everyone's poses, head positions, and the framing. Replace the background with manga speed-lines and dark screentone. Dramatic shonen manga panel style."
+    ],
+    "resolution" : {
+        "height" : 288,
+        "width" : 512
+    },
+    "compile_models": true,
+    "enable_spatial_cache": true,
+    "enable_tiny_vae": true,
+    "enable_flow_upscaler": false,
+    "enable_int8_quantization": true,
+    "target_fps": null,
+    "interpolation_exp": 2,
+    "use_reference_image": false,
+    "logging": false
+}

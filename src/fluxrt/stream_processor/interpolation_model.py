@@ -115,8 +115,24 @@ class IFNet(nn.Module):
         self.block2 = IFBlock(7 + 4, c=90)
         self.block_tea = IFBlock(10 + 4, c=90)
 
-    def forward(self, x):
-        scale_list = [4, 2, 1]
+    def forward(self, x, scale=1.0):
+        # scale=1.0 reproduces the original [4, 2, 1] multi-scale flow schedule.
+        # Lower scale -> coarser flow (better for large/fast motion, faster at
+        # high res); higher scale -> finer flow.
+        #
+        # The multi-scale pyramid downsamples by 4/scale, so H/W must be divisible
+        # by 32*ceil(1/scale) or the flow tensors come back the wrong size and
+        # crash (e.g. 288 at scale 0.5 -> 320 mismatch). Pad up to that multiple
+        # and crop the result back. scale=1.0/2.0 at multiples of 32 -> no padding,
+        # so the default path is unchanged.
+        _, _, in_h, in_w = x.shape
+        pad_mult = 32 * max(1, round(1.0 / scale))
+        pad_h = ((in_h - 1) // pad_mult + 1) * pad_mult
+        pad_w = ((in_w - 1) // pad_mult + 1) * pad_mult
+        if pad_h != in_h or pad_w != in_w:
+            x = F.pad(x, (0, pad_w - in_w, 0, pad_h - in_h))
+
+        scale_list = [4 / scale, 2 / scale, 1 / scale]
 
         channel = x.shape[1] // 2
         img0 = x[:, :channel]
@@ -152,7 +168,7 @@ class IFNet(nn.Module):
         for i in range(3):
             mask_list[i] = torch.sigmoid(mask_list[i])
             merged[i] = merged[i][0] * mask_list[i] + merged[i][1] * (1 - mask_list[i])
-        return merged[2]
+        return merged[2][:, :, :in_h, :in_w]
 
 
 def warp(tenInput, tenFlow):

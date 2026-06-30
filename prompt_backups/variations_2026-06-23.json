@@ -1,0 +1,60 @@
+{
+    "saved": "2026-06-23",
+    "note": "Candidate style variations being explored for slots 1-3. Originals are in cycle_2026-06-23.json. Letters = options to pick from per slot.",
+    "slot_1_dragon": [
+        {
+            "id": "1-pixel-snes",
+            "style": "16-bit SNES JRPG pixel art (NEW — user request)",
+            "text": "Turn the person into a 16-bit pixel-art dragon: stylize their face, head, and shoulders as a detailed pixel sprite of a scaled dragon - pixel scales, small swept-back horns, glowing reptilian eyes - with a rich SNES-era palette, smooth dithered gradients, soft dark outlines, and visible pixels. Keep the exact same pose, head position, expression, and framing. Replace the background with a pixel-art volcanic cavern - glowing lava tiles and rocky walls. Early-90s 16-bit console RPG look, warm nostalgic colors, clean pixel shading."
+        }
+    ],
+    "slot_2_zombie_monster": [
+        {
+            "id": "2e-pixel-neon-crimson",
+            "style": "neon cyberpunk pixel, bloody crimson (NEW — user request)",
+            "text": "Turn the person into a neon pixel-art zombie: render their face, hair, and shoulders as glowing low-res pixels of a rotting zombie - sunken eyes, gaunt decayed skin, exposed teeth - on a dark palette dominated by bloody crimson red with a hot scarlet glow, hard outlines, and dithered light. Keep the exact same pose, head position, expression, and framing. Replace the background with a pixelated blood-red neon city street at night. Retro 8/16-bit video-game style, CRT scanlines, vibrant crimson pixels."
+        },
+        {
+            "id": "2a-celshaded",
+            "style": "cel-shaded cartoon",
+            "text": "Turn the person into a cel-shaded cartoon monster: warp their face into a fanged, big-eyed creature with bold flat color fills, hard cel-shading, and thick black ink outlines, and cover their shoulders and chest in cracked monstrous hide. Keep the exact same pose, head position, expression, and framing. Replace the background with a stylized haunted forest in flat graphic colors. Modern cel-shaded animation style, clean line art."
+        },
+        {
+            "id": "2b-anime",
+            "style": "anime demon (oni)",
+            "text": "Turn the person into an anime-style demon: give their face sharp anime features, glowing eyes, fangs, and small horns, with cel-shaded skin in an unnatural hue and spiky stylized hair, and extend monstrous detailing across the shoulders. Keep the exact same pose, head position, expression, and framing. Replace the background with a moody anime night sky and a huge moon. Modern anime film style, dramatic cel shading."
+        },
+        {
+            "id": "2c-manga",
+            "style": "black-and-white manga",
+            "text": "Turn the person into a black-and-white manga monster: render their face and shoulders as high-contrast ink line art with screentone shading, cross-hatching, fangs, and wild eyes - monochrome, black ink on white. Keep the exact same pose, head position, expression, and framing. Replace the background with manga speed-lines and dark screentone. Dramatic shonen manga panel style."
+        },
+        {
+            "id": "2d-graphic-novel",
+            "style": "graphic-novel ink",
+            "text": "Turn the person into a gritty graphic-novel monster: bold inked outlines, heavy cross-hatched shadows, and a muted limited palette, with cracked monstrous skin and jagged fangs across face and shoulders. Keep the exact same pose, head position, and framing. Replace the background with a dark inked cityscape. Hellboy-style comic ink art."
+        }
+    ],
+    "slot_3_superhero": [
+        {
+            "id": "3a-celshaded",
+            "style": "cel-shaded (Spider-Verse)",
+            "text": "Turn the person into a cel-shaded comic superhero: give them a sleek masked superhero suit in bold flat colors with hard cel-shading, halftone-dot shadows, thick ink outlines, and a glowing chest emblem. Keep the exact same pose, head position, expression, and framing. Replace the background with a dynamic comic skyline of halftone dots and motion lines. Spider-Verse-style cel-shaded comic art."
+        },
+        {
+            "id": "3b-anime",
+            "style": "anime hero (shonen)",
+            "text": "Turn the person into an anime superhero: a sleek anime hero costume, expressive anime eyes, dynamic spiky hair or a visor mask, and cel-shaded coloring with sharp highlights. Keep the exact same pose, head position, expression, and framing. Replace the background with a glowing anime city at dusk with lens flares. Modern shonen anime style, vibrant cel shading."
+        },
+        {
+            "id": "3c-manga",
+            "style": "black-and-white manga",
+            "text": "Turn the person into a black-and-white manga superhero: render the suit and mask as crisp ink line art with screentone shading, speed lines, and bold blacks - monochrome only. Keep the exact same pose, head position, expression, and framing. Replace the background with dramatic manga speed-lines and screentone. Heroic shonen manga splash-page style."
+        },
+        {
+            "id": "3d-halftone",
+            "style": "retro halftone comic",
+            "text": "Turn the person into a vintage comic-book superhero: bold primary colors, Ben-Day halftone dots, thick black outlines, and a classic emblem suit. Keep the exact same pose, head position, and framing. Replace the background with a retro comic panel with action text. 1960s Silver-Age comic print style."
+        }
+    ]
+}

@@ -15,7 +15,11 @@ class StreamProcessor:
     def __init__(self, config_path: str):
         self.config = self.parse_config(config_path)
         self.resolution = self.config["resolution"]
-        output_batch_size = 2 ** self.config["interpolation_exp"]
+        cfg_exp = self.config.get("interpolation_exp", 1)
+        # Allocate the output batch for the max interpolation factor so the
+        # factor can be changed live (active count comes from a shared Value).
+        self._max_interp_exp = max(cfg_exp, 3)
+        output_batch_size = 2 ** self._max_interp_exp
 
         height, width = self.resolution["height"], self.resolution["width"]
         out_height, out_width = height, width
@@ -37,6 +41,7 @@ class StreamProcessor:
         self.pack_is_ready = Value("b", False)
         self.last_processing_time = Value("f", 0.0)
         self.frame_written = Value("b", False)
+        self.interpolation_exp_value = Value("i", cfg_exp)
 
         self.model_inference_subprocess = ModelInferenceSubprocess(
             self.config,
@@ -44,6 +49,7 @@ class StreamProcessor:
             self.output_batch_shared_tensor.name,
             self.pack_is_ready,
             self.last_processing_time,
+            self.interpolation_exp_value,
         )
 
         self.output_scheduler_subprocess = OutputSchedulerSubprocess(
@@ -53,6 +59,7 @@ class StreamProcessor:
             self.pack_is_ready,
             self.last_processing_time,
             self.frame_written,
+            self.interpolation_exp_value,
         )
 
     def parse_config(self, config_path: str) -> dict:
@@ -91,6 +98,19 @@ class StreamProcessor:
 
     def set_param(self, name: str, value) -> None:
         self.model_inference_subprocess.set_param(name=name, value=value)
+
+    def set_gen_param(self, name: str, value) -> None:
+        """Live advanced generation control: steps, seed, shift,
+        use_dynamic_shifting, stochastic_sampling, time_shift_type, sigmas,
+        rife_scale, interpolation_exp. Applies immediately."""
+        if name == "interpolation_exp":
+            # Shared Value read each pack by both the inference and scheduler
+            # processes; clamped to the buffer's allocated max.
+            self.interpolation_exp_value.value = max(
+                0, min(int(value), self._max_interp_exp)
+            )
+            return
+        self.model_inference_subprocess.set_gen_param(name=name, value=value)
 
     def set_reference_image(self, image: np.ndarray | None) -> None:
         if not self.config.get("use_reference_image", False):

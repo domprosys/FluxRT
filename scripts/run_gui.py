@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import platform
+import random
 import threading
 import time
 
@@ -20,6 +21,10 @@ from PySide6.QtWidgets import (
     QPushButton,
     QTextEdit,
     QComboBox,
+    QCheckBox,
+    QSpinBox,
+    QDoubleSpinBox,
+    QGroupBox,
     QFileDialog,
     QHBoxLayout,
     QVBoxLayout,
@@ -73,14 +78,27 @@ def log(msg: str) -> None:
     print(f"[FluxRT] {msg}", flush=True)
 
 
-def enumerate_cameras() -> list[tuple[int, str]]:
+def enumerate_cameras() -> list[tuple[int, bool]]:
+    """Return (index, is_live) for each openable camera.
+
+    is_live is True when the camera delivers a non-black frame. Idle NDI /
+    virtual cameras open successfully but only yield pure-black frames
+    (brightness ~0), so this lets the GUI prefer a real physical camera.
+    """
     found = []
     for i in range(MAX_CAM_INDEX):
         cap = cv2.VideoCapture(i, CAM_BACKEND)
         if not cap.isOpened() and CAM_BACKEND_FALLBACK is not None:
             cap = cv2.VideoCapture(i, CAM_BACKEND_FALLBACK)
         if cap.isOpened():
-            found.append((i, f"Camera {i}"))
+            # Grab a few frames so auto-exposure can warm up, then judge
+            # liveness by peak brightness (idle NDI cams stay pure black).
+            brightness = 0.0
+            for _ in range(5):
+                ok, frame = cap.read()
+                if ok and frame is not None:
+                    brightness = max(brightness, float(frame.mean()))
+            found.append((i, brightness > 2.0))
             cap.release()
     return found
 
@@ -316,6 +334,7 @@ class MainWindow(QMainWindow):
         self._cycle_interval_ms = 6000
         self._cycle_index = 0
         self._cycle_timer: QTimer | None = None
+        self._cycle_paused = False
         self._cfg_w = 576
         self._cfg_h = 320
 
@@ -336,6 +355,8 @@ class MainWindow(QMainWindow):
         self._vcam_thread: threading.Thread | None = None
         self._vcam_stop = threading.Event()
         self._vcam_cam = None
+        self._show_vcam = True  # overridden by config "show_virtual_cam"
+        self._show_advanced = False  # overridden by config "show_advanced_controls"
 
         self._spout_sender = None
         self._spout_sender_thread: threading.Thread | None = None
@@ -444,8 +465,10 @@ class MainWindow(QMainWindow):
         spout_row_l.addWidget(self._spout_input_edit)
         spout_row_l.addStretch()
         ctrl_layout.addWidget(spout_row, row, 1, 1, 2)
-        self._spout_lbl.setVisible(_SPOUT_AVAILABLE)
-        spout_row.setVisible(_SPOUT_AVAILABLE)
+        # Spout input form removed from the UI (webcam-only setup). The field
+        # stays present but empty, so capture always uses the camera.
+        self._spout_lbl.setVisible(False)
+        spout_row.setVisible(False)
         row += 1
 
         # Prompt row
@@ -515,6 +538,31 @@ class MainWindow(QMainWindow):
         btn_l.addWidget(self._vcam_err_lbl)
         btn_l.addStretch()
         ctrl_layout.addWidget(btn_row, row, 0, 1, 3)
+        row += 1
+
+        # Cycle controls (prev / pause / next) — shown only when prompt_cycle is set
+        self._cycle_ctrl_row = self._ctrl_row()
+        cyc_l = self._cycle_ctrl_row.layout()
+        self._prev_btn = QPushButton("◀ Prev")
+        self._prev_btn.clicked.connect(self._cycle_prev)
+        cyc_l.addWidget(self._prev_btn)
+        self._pause_btn = QPushButton("Pause")
+        self._pause_btn.clicked.connect(self._toggle_cycle_pause)
+        cyc_l.addWidget(self._pause_btn)
+        self._next_btn = QPushButton("Next ▶")
+        self._next_btn.clicked.connect(self._cycle_next)
+        cyc_l.addWidget(self._next_btn)
+        self._cycle_lbl = QLabel("")
+        cyc_l.addWidget(self._cycle_lbl)
+        cyc_l.addStretch()
+        self._cycle_ctrl_row.setVisible(False)
+        ctrl_layout.addWidget(self._cycle_ctrl_row, row, 0, 1, 3)
+        row += 1
+
+        # Advanced generation controls — hidden unless show_advanced_controls
+        self._advanced_group = self._build_advanced_controls()
+        ctrl_layout.addWidget(self._advanced_group, row, 0, 1, 3)
+        row += 1
 
         self.statusBar().showMessage("Ready.")
 
@@ -581,7 +629,36 @@ class MainWindow(QMainWindow):
             self._lip_btn.setEnabled(self._lip_transfer_in_config)
             self._prompt_cycle = cfg.get("prompt_cycle", []) or []
             self._cycle_interval_ms = int(cfg.get("prompt_cycle_interval_s", 6) * 1000)
+            self._cycle_ctrl_row.setVisible(bool(self._prompt_cycle))
             self._smooth_alpha = float(cfg.get("input_smoothing_alpha", 1.0))
+            # Virtual webcam (pyvirtualcam/OBS) output. Off for Spout-only / kiosk
+            # setups — hides the button and the OBS-not-found error label, and
+            # skips the auto-start that produces that error.
+            self._show_vcam = bool(cfg.get("show_virtual_cam", True))
+            self._vcam_btn.setVisible(self._show_vcam)
+            self._vcam_err_lbl.setVisible(self._show_vcam)
+            # Advanced generation controls (dev/experiment only).
+            self._show_advanced = bool(cfg.get("show_advanced_controls", False))
+            self._advanced_group.setVisible(self._show_advanced)
+            if self._show_advanced:
+                self._adv_steps.blockSignals(True)
+                self._adv_steps.setValue(int(cfg.get("default_steps", 2)))
+                self._adv_steps.blockSignals(False)
+                self._adv_seed.blockSignals(True)
+                self._adv_seed.setValue(int(cfg.get("default_seed", 52)))
+                self._adv_seed.blockSignals(False)
+                # RIFE enable + factor reflect the config's interpolation_exp.
+                cfg_interp = int(cfg.get("interpolation_exp", 2))
+                rife_on = cfg_interp > 0
+                self._adv_rife_on.blockSignals(True)
+                self._adv_rife_on.setChecked(rife_on)
+                self._adv_rife_on.blockSignals(False)
+                self._adv_interp.blockSignals(True)
+                self._adv_interp.setValue(cfg_interp if rife_on else 2)
+                self._adv_interp.setEnabled(rife_on)
+                self._adv_interp.blockSignals(False)
+                # Flow-upscaler toggle only matters if the capability is loaded.
+                self._adv_flow_up.setVisible(bool(cfg.get("enable_flow_upscaler", False)))
             default_prompt = cfg.get("default_prompt", "")
             if self._prompt_cycle:
                 # Cycle mode: prompt box mirrors the active cycle prompt (read-only).
@@ -601,23 +678,38 @@ class MainWindow(QMainWindow):
         log("Scanning for cameras…")
         cams = enumerate_cameras()
         self._cam_combo.clear()
-        if cams:
-            for _, lbl in cams:
-                self._cam_combo.addItem(lbl)
+        # Prefer cameras that actually deliver a picture; idle NDI / virtual
+        # cams (black frames) are skipped. If nothing is live, fall back to
+        # listing everything so the app stays usable.
+        live = [(i, is_live) for (i, is_live) in cams if is_live]
+        entries = live if live else cams
+        if entries:
+            for idx, is_live in entries:
+                label = f"Camera {idx}" if is_live else f"Camera {idx} (no signal)"
+                self._cam_combo.addItem(label, idx)
+            self._cam_combo.setCurrentIndex(0)  # first live camera
             self._cam_err_lbl.setText("")
-            log(f"Cameras found: {[lbl for _, lbl in cams]}")
+            skipped = [i for (i, is_live) in cams if not is_live] if live else []
+            msg = f"Cameras found (live): {[i for (i, _) in entries]}"
+            if skipped:
+                msg += f"  | skipped no-signal: {skipped}"
+            log(msg)
         else:
             self._cam_err_lbl.setText("No cameras found")
             log("No cameras found")
 
     def _selected_cam_index(self) -> int | None:
+        idx = self._cam_combo.currentData()
+        if idx is not None:
+            return int(idx)
+        # Fallback: parse a trailing integer from the label.
         val = self._cam_combo.currentText()
         if not val:
             return None
-        try:
-            return int(val.split()[-1])
-        except ValueError:
-            return None
+        for tok in reversed(val.split()):
+            if tok.isdigit():
+                return int(tok)
+        return None
 
     # ── prompt / reference ─────────────────────────────────────────────────────
 
@@ -627,11 +719,12 @@ class MainWindow(QMainWindow):
         if self.isFullScreen():
             self._exit_fullscreen()
         else:
-            # Show ONLY the processed output: hide controls, the input panel, and
-            # the "Output" caption. Status bar stays (shows the active cycle prompt).
+            # Show ONLY the processed output: hide controls, the input panel, the
+            # "Output" caption, and the status bar (the blue cycle x/N bar).
             self._ctrl_area.hide()
             self._input_panel.hide()
             self._output_panel._title_lbl.hide()
+            self.statusBar().hide()
             self.showFullScreen()
             self._fs_btn.setText("Exit Fullscreen (Esc)")
 
@@ -641,7 +734,182 @@ class MainWindow(QMainWindow):
         self._ctrl_area.show()
         self._input_panel.show()
         self._output_panel._title_lbl.show()
+        self.statusBar().show()
         self._fs_btn.setText("Fullscreen (F11)")
+
+    # ── advanced generation controls ─────────────────────────────────────────
+
+    def _send_gen(self, name: str, value) -> None:
+        """Push a live advanced-control change to the running stream processor
+        (no-op until a stream is running)."""
+        if self._sp is not None:
+            self._sp.set_gen_param(name, value)
+
+    def _build_advanced_controls(self) -> QGroupBox:
+        # Checkable group title acts as a collapse/expand toggle; the inner
+        # widget (all the knobs) is hidden by default so the panel stays tidy.
+        group = QGroupBox("Advanced (generation)")
+        group.setVisible(False)
+        group.setCheckable(True)
+        group.setChecked(False)
+        outer = QVBoxLayout(group)
+        outer.setContentsMargins(8, 4, 8, 8)
+        inner = QWidget()
+        grid = QGridLayout(inner)
+        grid.setContentsMargins(6, 6, 6, 6)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(6)
+        outer.addWidget(inner)
+        inner.setVisible(False)
+        group.toggled.connect(inner.setVisible)
+        self._adv_row = 0
+
+        def add_row(label: str, widget) -> None:
+            grid.addWidget(
+                QLabel(label),
+                self._adv_row,
+                0,
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            )
+            grid.addWidget(widget, self._adv_row, 1)
+            self._adv_row += 1
+
+        # Steps
+        self._adv_steps = QSpinBox()
+        self._adv_steps.setRange(1, 8)
+        self._adv_steps.setValue(2)
+        self._adv_steps.valueChanged.connect(lambda v: self._send_gen("steps", int(v)))
+        add_row("Steps", self._adv_steps)
+
+        # Seed + reroll
+        seed_row = QWidget()
+        seed_l = QHBoxLayout(seed_row)
+        seed_l.setContentsMargins(0, 0, 0, 0)
+        self._adv_seed = QSpinBox()
+        self._adv_seed.setRange(0, 2_147_483_647)
+        self._adv_seed.setValue(52)
+        self._adv_seed.valueChanged.connect(lambda v: self._send_gen("seed", int(v)))
+        seed_l.addWidget(self._adv_seed, 1)
+        reroll = QPushButton("Reroll")
+        reroll.clicked.connect(self._reroll_seed)
+        seed_l.addWidget(reroll)
+        add_row("Seed", seed_row)
+
+        # Dynamic shift toggle (when on, shift is auto from resolution/steps)
+        self._adv_dynamic = QCheckBox("Dynamic shift (auto)")
+        self._adv_dynamic.setChecked(True)
+        self._adv_dynamic.toggled.connect(self._on_dynamic_shift_toggled)
+        add_row("", self._adv_dynamic)
+
+        # Static shift value (active only when dynamic shift is off)
+        self._adv_shift = QDoubleSpinBox()
+        self._adv_shift.setRange(0.1, 12.0)
+        self._adv_shift.setSingleStep(0.1)
+        self._adv_shift.setValue(3.0)
+        self._adv_shift.setEnabled(False)
+        self._adv_shift.valueChanged.connect(
+            lambda v: self._send_gen("shift", float(v))
+        )
+        add_row("Shift", self._adv_shift)
+
+        # Stochastic sampling
+        self._adv_stochastic = QCheckBox("Stochastic sampling")
+        self._adv_stochastic.toggled.connect(
+            lambda c: self._send_gen("stochastic_sampling", bool(c))
+        )
+        add_row("", self._adv_stochastic)
+
+        # Time shift type
+        self._adv_timeshift = QComboBox()
+        self._adv_timeshift.addItems(["exponential", "linear"])
+        self._adv_timeshift.currentTextChanged.connect(
+            lambda t: self._send_gen("time_shift_type", t)
+        )
+        add_row("Time shift", self._adv_timeshift)
+
+        # Beta sigma spacing (community suggests Euler + Beta for Klein)
+        self._adv_beta = QCheckBox("Beta sigmas")
+        self._adv_beta.toggled.connect(
+            lambda c: self._send_gen("use_beta_sigmas", bool(c))
+        )
+        add_row("", self._adv_beta)
+
+        # Custom sigmas (comma-separated, descending; overrides steps)
+        self._adv_sigmas = QLineEdit()
+        self._adv_sigmas.setPlaceholderText(
+            "auto — e.g. 1.0, 0.75, 0.5, 0.25 (overrides steps)"
+        )
+        self._adv_sigmas.editingFinished.connect(self._apply_sigmas)
+        add_row("Sigmas", self._adv_sigmas)
+
+        # ── RIFE frame interpolation ─────────────────────────────────────────
+        # Interpolation factor: output = 2^exp displayed frames per generated
+        # frame. Higher = smoother but more latency/warp. Buffer supports up to 8 (exp 3).
+        # RIFE on/off + factor. "Enable RIFE" toggles interpolation entirely
+        # (off = interp 0 = raw generated frames, no warp artifacts but choppier);
+        # the spinbox sets the factor (2^exp output frames) when enabled.
+        self._adv_rife_on = QCheckBox("Enable RIFE")
+        self._adv_rife_on.setChecked(True)
+        self._adv_rife_on.toggled.connect(self._on_rife_enabled)
+        add_row("", self._adv_rife_on)
+
+        self._adv_interp = QSpinBox()
+        self._adv_interp.setRange(1, 3)
+        self._adv_interp.setValue(2)
+        self._adv_interp.valueChanged.connect(self._on_interp_changed)
+        add_row("Interp 2^exp", self._adv_interp)
+
+        # RIFE optical-flow scale — power-of-2 only (other values don't align
+        # with the multi-scale pyramid). Lower = coarser flow (better for
+        # large/fast motion). NOTE: recompiles RIFE on change when compile is on.
+        self._adv_rife_scale = QComboBox()
+        self._adv_rife_scale.addItems(["0.25", "0.5", "1.0", "2.0"])
+        self._adv_rife_scale.setCurrentText("1.0")
+        self._adv_rife_scale.currentTextChanged.connect(
+            lambda t: self._send_gen("rife_scale", float(t))
+        )
+        add_row("Flow scale", self._adv_rife_scale)
+
+        # Flow upscaler — live 2x output super-resolution. Only has an effect when
+        # the config loads the capability (enable_flow_upscaler). Off by default.
+        self._adv_flow_up = QCheckBox("Flow upscaler (2x output)")
+        self._adv_flow_up.toggled.connect(
+            lambda c: self._send_gen("flow_upscale_on", bool(c))
+        )
+        add_row("", self._adv_flow_up)
+
+        return group
+
+    def _reroll_seed(self) -> None:
+        self._adv_seed.setValue(random.randint(0, 2_147_483_647))
+
+    def _on_rife_enabled(self, on: bool) -> None:
+        self._adv_interp.setEnabled(on)
+        self._send_gen("interpolation_exp", self._adv_interp.value() if on else 0)
+
+    def _on_interp_changed(self, v: int) -> None:
+        if self._adv_rife_on.isChecked():
+            self._send_gen("interpolation_exp", int(v))
+
+    def _on_dynamic_shift_toggled(self, checked: bool) -> None:
+        self._adv_shift.setEnabled(not checked)
+        self._send_gen("use_dynamic_shifting", bool(checked))
+
+    def _apply_sigmas(self) -> None:
+        text = self._adv_sigmas.text().strip()
+        if not text:
+            self._send_gen("sigmas", None)
+            return
+        try:
+            sigmas = [
+                float(x) for x in text.replace(";", ",").split(",") if x.strip()
+            ]
+        except ValueError:
+            self.statusBar().showMessage(
+                "Invalid sigmas — use comma-separated numbers (e.g. 1.0, 0.5)"
+            )
+            return
+        self._send_gen("sigmas", sigmas if sigmas else None)
 
     # ── prompt cycle ─────────────────────────────────────────────────────────────
 
@@ -650,13 +918,40 @@ class MainWindow(QMainWindow):
             self._cycle_timer = QTimer(self)
             self._cycle_timer.timeout.connect(self._advance_cycle)
         self._cycle_index = 0
+        self._cycle_paused = False
+        if hasattr(self, "_pause_btn"):
+            self._pause_btn.setText("Pause")
         self._cycle_timer.start(self._cycle_interval_ms)
+        self._update_cycle_label()
         log(f"Prompt cycle started: {len(self._prompt_cycle)} prompts, "
             f"{self._cycle_interval_ms/1000:.0f}s each")
 
     def _stop_cycle_timer(self) -> None:
         if self._cycle_timer is not None:
             self._cycle_timer.stop()
+
+    def _update_cycle_label(self) -> None:
+        if hasattr(self, "_cycle_lbl") and self._prompt_cycle:
+            paused = "  (paused)" if self._cycle_paused else ""
+            self._cycle_lbl.setText(
+                f"[{self._cycle_index + 1}/{len(self._prompt_cycle)}]{paused}"
+            )
+
+    def _apply_cycle_index(self, idx: int) -> None:
+        """Switch to cycle prompt `idx` (instant, pre-encoded) and sync the UI."""
+        if self._sp is None or not self._prompt_cycle:
+            return
+        self._cycle_index = idx % len(self._prompt_cycle)
+        prompt = self._prompt_cycle[self._cycle_index]
+        self._sp.set_prompt_index(self._cycle_index)  # instant: swaps cached embeds
+        self._prompt_edit.blockSignals(True)
+        self._prompt_edit.setPlainText(prompt)
+        self._prompt_edit.blockSignals(False)
+        self._update_cycle_label()
+        self.statusBar().showMessage(
+            f"Cycle [{self._cycle_index + 1}/{len(self._prompt_cycle)}]: {prompt[:60]}"
+        )
+        log(f"cycle -> [{self._cycle_index}] {prompt}")
 
     def _advance_cycle(self) -> None:
         # Wait until the model is ready (prompts pre-encoded) before switching.
@@ -667,16 +962,36 @@ class MainWindow(QMainWindow):
                 return
         except Exception:
             return
-        self._cycle_index = (self._cycle_index + 1) % len(self._prompt_cycle)
-        prompt = self._prompt_cycle[self._cycle_index]
-        self._sp.set_prompt_index(self._cycle_index)  # instant: swaps cached embeds
-        self._prompt_edit.blockSignals(True)
-        self._prompt_edit.setPlainText(prompt)
-        self._prompt_edit.blockSignals(False)
-        self.statusBar().showMessage(
-            f"Cycle [{self._cycle_index + 1}/{len(self._prompt_cycle)}]: {prompt[:60]}"
-        )
-        log(f"cycle -> [{self._cycle_index}] {prompt}")
+        self._apply_cycle_index(self._cycle_index + 1)
+
+    def _restart_cycle_interval(self) -> None:
+        # After a manual step, restart the timer so the next auto-advance is a
+        # full interval away (no effect while paused).
+        if self._cycle_timer is not None and not self._cycle_paused:
+            self._cycle_timer.start(self._cycle_interval_ms)
+
+    def _cycle_next(self) -> None:
+        self._apply_cycle_index(self._cycle_index + 1)
+        self._restart_cycle_interval()
+
+    def _cycle_prev(self) -> None:
+        self._apply_cycle_index(self._cycle_index - 1)
+        self._restart_cycle_interval()
+
+    def _toggle_cycle_pause(self) -> None:
+        if self._cycle_timer is None:
+            return
+        if self._cycle_paused:
+            self._cycle_paused = False
+            self._pause_btn.setText("Pause")
+            self._cycle_timer.start(self._cycle_interval_ms)
+            self.statusBar().showMessage("Cycle resumed")
+        else:
+            self._cycle_paused = True
+            self._pause_btn.setText("Resume")
+            self._cycle_timer.stop()
+            self.statusBar().showMessage("Cycle paused")
+        self._update_cycle_label()
 
     def _on_prompt_changed(self) -> None:
         prompt = self._prompt_edit.toPlainText()
@@ -825,7 +1140,8 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(status_msg)
         log(f"Capture started: {status_msg}")
         self._start_spout_output()
-        self._start_vcam()
+        if self._show_vcam:
+            self._start_vcam()
         if self._prompt_cycle:
             self._start_cycle_timer()
 
