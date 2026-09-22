@@ -68,7 +68,7 @@ if [ ! -x .venv/bin/python ]; then
   log "creating StreamDiffusion venv"
   uv venv --python 3.11 .venv >/dev/null
   uv pip install --python .venv/bin/python torch==2.7.0 torchvision==0.22.0 --index-url https://download.pytorch.org/whl/cu128
-  uv pip install --python .venv/bin/python -e ".[xformers,controlnet]" peft
+  uv pip install --python .venv/bin/python -e ".[xformers,controlnet]" peft "mediapipe==0.10.21"
 fi
 .venv/bin/python -c "import streamdiffusion, torch; print('sd venv ok, torch', torch.__version__)"
 if [ ! -d "$HF_HOME/hub/models--Lykon--dreamshaper-8" ]; then
