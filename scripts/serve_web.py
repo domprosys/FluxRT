@@ -82,12 +82,14 @@ def build_backend(config_path: str, cfg: dict, force_int8: bool = False) -> Back
         # "python" / "worker_cwd" may be relative to the repo root (e.g.
         # "../StreamDiffusion-daydream/.venv/bin/python"), so the same config
         # works wherever the sibling library clone lives (dev box, pod, ...).
-        python = Path(python).expanduser()
+        # normpath, not resolve(): the venv's python is a symlink to the base
+        # interpreter and following it would bypass the venv's site-packages.
+        python = Path(os.path.normpath(Path(python).expanduser()))
         if not python.is_absolute():
-            python = (REPO_DIR / python).resolve()
+            python = Path(os.path.normpath(REPO_DIR / python))
         cwd = cfg.get("worker_cwd")
         if cwd and not Path(cwd).expanduser().is_absolute():
-            cwd = str((REPO_DIR / cwd).resolve())
+            cwd = os.path.normpath(REPO_DIR / cwd)
         if not python.exists():
             raise FileNotFoundError(f"worker python not found: {python}")
         return WorkerBackend(
