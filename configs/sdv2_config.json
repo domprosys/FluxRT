@@ -1,0 +1,37 @@
+{
+    "backend": "sdv2",
+    "python": "../StreamDiffusionV2/.venv/bin/python",
+    "worker_cwd": "../StreamDiffusionV2",
+    "resolution": {
+        "height": 512,
+        "width": 512
+    },
+    "default_prompt": "a cyborg with polished chrome skin, exposed mechanical joints and a glowing blue optic eye, standing in a neon-lit futuristic server hall, cool blue rim lighting, cinematic sci-fi, highly detailed",
+    "prompt_cycle": [
+        "a cyborg with polished chrome skin, exposed mechanical joints and a glowing blue optic eye, standing in a neon-lit futuristic server hall, cool blue rim lighting, cinematic sci-fi, highly detailed",
+        "an ancient stone golem made of cracked mossy granite with molten lava glowing through the fissures, inside a crumbling torch-lit temple, drifting dust and embers, fantasy concept art",
+        "an anime character with big expressive eyes and spiky hair under a giant glowing full moon on a rooftop at night, cel-shaded, modern anime film style, vibrant colors",
+        "a knight in ornate silver plate armor with a red cape in a misty medieval castle hall, candlelight, oil painting style, dramatic chiaroscuro",
+        "a zombie with pale rotting skin and sunken glowing eyes on a foggy abandoned city street at night, horror movie, green moonlight, cinematic",
+        "a Pixar-style 3D animated cartoon character with soft rounded features in a colorful toy workshop, warm lighting, cute, high quality 3D render",
+        "a Viking warrior with a braided beard, fur cloak and war paint on a snowy fjord at dawn, cold blue light, epic film still",
+        "a watercolor painting of a person in a sunlit flower garden, soft pastel colors, loose brush strokes, dreamy impressionist style"
+    ],
+    "prompt_cycle_interval_s": 30,
+    "input_smoothing_alpha": 1.0,
+    "worker": {
+        "config_path": "configs/wan_causal_dmd_v2v.yaml",
+        "checkpoint": "ckpts/wan_causal_dmd_v2v/model.pt",
+        "steps": 2,
+        "seed": 42,
+        "noise_scale": 0.8,
+        "adaptive_noise": true,
+        "prompt_reset": "hard",
+        "text_encoder_device": "cpu",
+        "text_encoder_fp32": false,
+        "vae_type": "lightvae",
+        "fp8": false,
+        "output_fps": 0,
+        "cudnn_benchmark": true
+    }
+}
