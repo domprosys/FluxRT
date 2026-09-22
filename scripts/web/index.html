@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FluxRT Live</title>
+<style>
+  :root { color-scheme: dark; --bg:#0b0b0e; --fg:#e8e8ec; --mut:#8a8a94; --acc:#5aa9ff; --pan:rgba(20,20,26,.88); }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg); font:14px/1.4 system-ui, sans-serif; }
+  #stage { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:#000; }
+  #out { width:100%; height:100%; object-fit:contain; background:#000; }
+  #self { position:fixed; right:12px; top:12px; width:180px; aspect-ratio:16/9; object-fit:cover; border-radius:8px; border:1px solid #333; background:#111; display:none; }
+  #hud { position:fixed; left:12px; top:12px; padding:6px 10px; background:var(--pan); border-radius:8px; color:var(--mut); font-size:12px; white-space:pre; }
+  #bar { position:fixed; left:0; right:0; bottom:0; padding:10px 12px; background:var(--pan); display:flex; flex-wrap:wrap; gap:8px; align-items:center; transition:opacity .3s; }
+  body.fs #bar, body.fs #hud, body.fs #self { opacity:0; pointer-events:none; }
+  body.fs.peek #bar, body.fs.peek #hud, body.fs.peek #self { opacity:1; pointer-events:auto; }
+  button, input, select { font:inherit; border-radius:6px; border:1px solid #3a3a44; background:#1b1b22; color:var(--fg); padding:6px 10px; }
+  button { cursor:pointer; }
+  button:hover { border-color:var(--acc); }
+  button.primary { background:var(--acc); color:#04121f; border-color:var(--acc); font-weight:600; }
+  button.on { border-color:var(--acc); color:var(--acc); }
+  #chips { display:flex; flex-wrap:wrap; gap:6px; width:100%; }
+  #chips button { padding:4px 8px; font-size:12px; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #chips button.cur { background:var(--acc); color:#04121f; border-color:var(--acc); }
+  #prompt { flex:1 1 320px; min-width:200px; }
+  #msg { width:100%; color:#ffb454; font-size:12px; min-height:1em; }
+  .sep { width:1px; height:24px; background:#3a3a44; }
+  label { color:var(--mut); font-size:12px; display:flex; gap:6px; align-items:center; }
+  input[type=number] { width:64px; }
+  input[type=range] { width:100px; padding:0; }
+</style>
+</head>
+<body>
+<div id="stage"><video id="out" autoplay playsinline muted></video></div>
+<video id="self" autoplay playsinline muted></video>
+<div id="hud">connecting…</div>
+
+<div id="bar">
+  <div id="msg"></div>
+  <div id="chips"></div>
+  <div id="cnets" style="display:none; width:100%; gap:10px; flex-wrap:wrap; align-items:center"></div>
+  <select id="cam" title="camera"></select>
+  <button id="go" class="primary">Start camera</button>
+  <button id="watch">Watch only</button>
+  <button id="stop" disabled>Stop</button>
+  <div class="sep"></div>
+  <button id="prev" title="previous prompt">◀</button>
+  <button id="cyc">Cycle</button>
+  <button id="next" title="next prompt">▶</button>
+  <label>every <input id="ival" type="number" min="1" step="1" value="30"> s</label>
+  <label>smooth <input id="alpha" type="range" min="0.1" max="1" step="0.05" value="1"><span id="alphav">1.00</span></label>
+  <label id="rifeLabel" style="display:none">RIFE <select id="rife" title="frame interpolation: off shows raw generated frames">
+    <option value="0">off</option><option value="1">2x</option><option value="2">4x</option><option value="3">8x</option>
+  </select></label>
+  <div class="sep"></div>
+  <input id="prompt" placeholder="custom prompt (Enter to apply)">
+  <button id="apply">Apply</button>
+  <div class="sep"></div>
+  <button id="fs" title="F or F11">Fullscreen</button>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const q = new URLSearchParams(location.search);
+const relayOnly = q.get('relay') === '1';
+let pc = null, pcId = null, camStream = null, state = null, role = null;
+
+function say(t) { $('msg').textContent = t || ''; }
+function hud(t) { $('hud').textContent = t; }
+
+async function listCams() {
+  try {
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    const cams = devs.filter(d => d.kind === 'videoinput');
+    $('cam').innerHTML = cams.map((d, i) => `<option value="${d.deviceId}">${d.label || 'camera ' + (i + 1)}</option>`).join('');
+  } catch (e) { /* no permission yet */ }
+}
+
+function waitIce(pc, ms = 1500) {
+  return new Promise(res => {
+    if (pc.iceGatheringState === 'complete') return res();
+    const t = setTimeout(res, ms);
+    pc.addEventListener('icegatheringstatechange', () => {
+      if (pc.iceGatheringState === 'complete') { clearTimeout(t); res(); }
+    });
+  });
+}
+
+async function connect(asRole, force = false) {
+  await disconnect();
+  role = asRole;
+  say('');
+  const ice = await (await fetch('/api/ice-servers')).json();
+  pc = new RTCPeerConnection({ iceServers: ice.iceServers, iceTransportPolicy: relayOnly ? 'relay' : 'all' });
+  pc.ontrack = e => { $('out').srcObject = e.streams[0] || new MediaStream([e.track]); };
+  pc.onconnectionstatechange = () => {
+    hud(`webrtc: ${pc.connectionState}`);
+    if (['failed', 'disconnected', 'closed'].includes(pc.connectionState)) say('connection ' + pc.connectionState);
+  };
+  // Order matters: the server pairs its output track with the FIRST video m-line.
+  pc.addTransceiver('video', { direction: 'recvonly' });
+  if (role === 'stage') {
+    const deviceId = $('cam').value || undefined;
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: deviceId ? { exact: deviceId } : undefined, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+      audio: false,
+    });
+    $('self').srcObject = camStream; $('self').style.display = 'block';
+    pc.addTransceiver(camStream.getVideoTracks()[0], { direction: 'sendonly' });
+    listCams();
+  }
+  await pc.setLocalDescription(await pc.createOffer());
+  await waitIce(pc);
+  const r = await fetch('/api/offer', { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type, role, force }) });
+  if (r.status === 409) {
+    say('Stage is busy. Click "Start camera" again to take it over, or "Watch only".');
+    $('go').textContent = 'Take over stage'; $('go').dataset.force = '1';
+    await disconnect(); return;
+  }
+  if (!r.ok) { say('offer failed: ' + r.status + ' ' + await r.text()); await disconnect(); return; }
+  const ans = await r.json(); pcId = ans.id;
+  await pc.setRemoteDescription(ans);
+  $('stop').disabled = false;
+  $('go').textContent = 'Start camera'; delete $('go').dataset.force;
+}
+
+async function disconnect() {
+  if (pcId) { fetch('/api/hangup', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: pcId }) }).catch(() => {}); }
+  if (pc) { pc.close(); }
+  if (camStream) { camStream.getTracks().forEach(t => t.stop()); }
+  pc = null; pcId = null; camStream = null; role = null;
+  $('self').style.display = 'none'; $('out').srcObject = null; $('stop').disabled = true;
+}
+
+async function post(url, body) {
+  const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  if (r.ok) { const s = await r.json(); if (s && 'cycle' in s) render(s); }
+  else say(url + ' → ' + r.status);
+}
+
+function render(s) {
+  state = s;
+  if ($('chips').children.length !== s.cycle.length) {
+    $('chips').innerHTML = s.cycle.map((p, i) => `<button data-i="${i}" title="${p.replace(/"/g, '&quot;')}">${i + 1}. ${p.split(':')[0].replace(/^Turn everyone in the frame into /i, '')}</button>`).join('');
+    $('chips').querySelectorAll('button').forEach(b => b.onclick = () => post('/api/prompt_index', { index: +b.dataset.i }));
+  }
+  $('chips').querySelectorAll('button').forEach(b => b.classList.toggle('cur', !s.custom_prompt && +b.dataset.i === s.prompt_index));
+  $('cyc').classList.toggle('on', s.cycle_enabled);
+  if (document.activeElement !== $('ival')) $('ival').value = s.cycle_interval_s;
+  if (document.activeElement !== $('alpha')) { $('alpha').value = s.smoothing_alpha; $('alphav').textContent = (+s.smoothing_alpha).toFixed(2); }
+  $('rifeLabel').style.display = ('interpolation_exp' in s) ? '' : 'none';
+  renderCnets(s.controlnets);
+  if ('interpolation_exp' in s && document.activeElement !== $('rife')) $('rife').value = String(s.interpolation_exp);
+  const conn = pc ? pc.connectionState : 'idle';
+  hud(
+    (s.alive === false ? `${s.backend}: backend DIED` : s.ready ? `${s.backend} ready` : `loading ${s.backend}… ${Math.round(s.uptime_s)}s`) +
+    `\nwebrtc: ${conn}${role ? ' (' + role + ')' : ''}` +
+    `\nin ${s.input_fps} fps · gen ${s.base_fps} fps (${Math.round(s.proc_time_s * 1000)} ms) · out ${s.out_fps} fps` +
+    ('interpolation_exp' in s ? ` · rife ${s.interpolation_exp ? (2 ** s.interpolation_exp) + 'x' : 'off'}` : '') +
+    `\nstage ${s.stage_busy ? 'busy' : 'free'} · viewers ${s.viewers} · gpu ${s.gpu_reserved_mb} MB` +
+    (s.cycle_enabled ? `\nnext prompt in ${s.cycle_remaining_s}s` : '') +
+    (s.custom_prompt ? `\ncustom: ${s.custom_prompt.slice(0, 60)}…` : '') +
+    (s.last_error ? `\nlast error: ${String(s.last_error).split('\n').slice(-1)[0].slice(0, 90)}` : '')
+  );
+}
+
+function renderCnets(list) {
+  const box = $('cnets');
+  if (!Array.isArray(list) || !list.length) { box.style.display = 'none'; return; }
+  box.style.display = 'flex';
+  if (box.children.length !== list.length) {
+    box.innerHTML = list.map(c => `<label title="${c.model_id || ''} / ${c.preprocessor || ''}">
+      <input type="checkbox" data-cn="${c.name}" ${c.enabled ? 'checked' : ''}> ${c.name}
+      <input type="range" data-cns="${c.name}" min="0" max="1.5" step="0.05" value="${c.scale}" style="width:80px">
+      <span data-cnv="${c.name}">${(+c.scale).toFixed(2)}</span></label>`).join('');
+    box.querySelectorAll('input[type=checkbox]').forEach(el => el.onchange = () =>
+      post('/api/gen', { name: 'controlnet_enabled', value: { name: el.dataset.cn, enabled: el.checked } }));
+    box.querySelectorAll('input[type=range]').forEach(el => {
+      el.oninput = () => box.querySelector(`[data-cnv="${el.dataset.cns}"]`).textContent = (+el.value).toFixed(2);
+      el.onchange = () => post('/api/gen', { name: 'controlnet_scale', value: { name: el.dataset.cns, scale: +el.value } });
+    });
+  } else {
+    list.forEach(c => {
+      const cb = box.querySelector(`[data-cn="${c.name}"]`), sl = box.querySelector(`[data-cns="${c.name}"]`);
+      if (cb && document.activeElement !== cb) cb.checked = !!c.enabled;
+      if (sl && document.activeElement !== sl) { sl.value = c.scale; box.querySelector(`[data-cnv="${c.name}"]`).textContent = (+c.scale).toFixed(2); }
+    });
+  }
+}
+
+async function poll() {
+  try { render(await (await fetch('/api/state')).json()); } catch (e) { hud('server unreachable'); }
+  setTimeout(poll, 1000);
+}
+
+$('go').onclick = () => connect('stage', $('go').dataset.force === '1').catch(e => say(e.message));
+$('watch').onclick = () => connect('view').catch(e => say(e.message));
+$('stop').onclick = disconnect;
+$('prev').onclick = () => post('/api/prompt_index', { index: (state.prompt_index - 1 + state.cycle.length) % state.cycle.length });
+$('next').onclick = () => post('/api/prompt_index', { index: (state.prompt_index + 1) % state.cycle.length });
+$('cyc').onclick = () => post('/api/cycle', { enabled: !state.cycle_enabled });
+$('ival').onchange = () => post('/api/cycle', { interval_s: +$('ival').value });
+$('alpha').oninput = () => $('alphav').textContent = (+$('alpha').value).toFixed(2);
+$('alpha').onchange = () => post('/api/smoothing', { alpha: +$('alpha').value });
+$('rife').onchange = () => post('/api/gen', { name: 'interpolation_exp', value: +$('rife').value });
+$('apply').onclick = () => post('/api/prompt', { text: $('prompt').value });
+$('prompt').onkeydown = e => { if (e.key === 'Enter') $('apply').click(); };
+
+function toggleFs() {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+  else document.exitFullscreen();
+}
+$('fs').onclick = toggleFs;
+document.addEventListener('fullscreenchange', () => document.body.classList.toggle('fs', !!document.fullscreenElement));
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'f' || e.key === 'F11') { e.preventDefault(); toggleFs(); }
+  if (e.key === 'ArrowRight') $('next').click();
+  if (e.key === 'ArrowLeft') $('prev').click();
+});
+let peekT = null;
+document.addEventListener('mousemove', () => {
+  document.body.classList.add('peek'); clearTimeout(peekT);
+  peekT = setTimeout(() => document.body.classList.remove('peek'), 2500);
+});
+
+listCams();
+poll();
+</script>
+</body>
+</html>
