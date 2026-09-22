@@ -79,15 +79,26 @@ def build_backend(config_path: str, cfg: dict, force_int8: bool = False) -> Back
         if not python:
             raise ValueError(f"config for backend '{kind}' needs a \"python\" path to the worker venv")
         env = dict(os.environ, **{k: str(v) for k, v in (cfg.get("worker_env") or {}).items()})
+        # "python" / "worker_cwd" may be relative to the repo root (e.g.
+        # "../StreamDiffusion-daydream/.venv/bin/python"), so the same config
+        # works wherever the sibling library clone lives (dev box, pod, ...).
+        python = Path(python).expanduser()
+        if not python.is_absolute():
+            python = (REPO_DIR / python).resolve()
+        cwd = cfg.get("worker_cwd")
+        if cwd and not Path(cwd).expanduser().is_absolute():
+            cwd = str((REPO_DIR / cwd).resolve())
+        if not python.exists():
+            raise FileNotFoundError(f"worker python not found: {python}")
         return WorkerBackend(
             name=kind,
-            python=str(Path(python).expanduser()),
+            python=str(python),
             script=str(WORKER_SCRIPTS[kind]),
             cfg=cfg,
             resolution=(res["height"], res["width"]),
             out_resolution=(out["height"], out["width"]),
             env=env,
-            cwd=cfg.get("worker_cwd"),
+            cwd=cwd,
         )
     raise ValueError(f"unknown backend '{kind}' (known: fluxrt, {', '.join(WORKER_SCRIPTS)})")
 
