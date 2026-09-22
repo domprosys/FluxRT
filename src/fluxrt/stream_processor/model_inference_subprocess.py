@@ -362,14 +362,18 @@ class ModelInferenceSubprocess:
         # Encode on whatever device the text encoder lives on (CPU in low-VRAM
         # mode), then move the small (~8MB) embeddings to the transformer's device.
         _t0 = time.time()
-        embeds, _ = self.pipe.encode_prompt(
-            prompt=prompt,
-            device=self.text_encoder_device,
-            num_images_per_prompt=1,
-            max_sequence_length=512,
-            text_encoder_out_layers=(9, 18, 27),
-        )
-        embeds = embeds.to(self.device, self.dtype)
+        # no_grad is essential: without it every cached embedding keeps the
+        # encoder's full autograd graph alive (~1GB per prompt), which OOMs the
+        # GPU when pre-encoding a prompt cycle with the encoder on cuda.
+        with torch.no_grad():
+            embeds, _ = self.pipe.encode_prompt(
+                prompt=prompt,
+                device=self.text_encoder_device,
+                num_images_per_prompt=1,
+                max_sequence_length=512,
+                text_encoder_out_layers=(9, 18, 27),
+            )
+        embeds = embeds.detach().to(self.device, self.dtype)
         if self.config.get("logging", False):
             print(
                 f"[FluxRT] encoded prompt on {self.text_encoder_device} in "
