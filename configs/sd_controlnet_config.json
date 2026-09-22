@@ -1,0 +1,100 @@
+{
+  "backend": "sd",
+  "python": "/media/alex/ai/ai_newmedia/StreamDiffusion-daydream/.venv/bin/python",
+  "worker_cwd": "/media/alex/ai/ai_newmedia/StreamDiffusion-daydream",
+  "resolution": {
+    "width": 512,
+    "height": 512
+  },
+  "default_prompt": "anime style illustration, vibrant colors",
+  "prompt_cycle": [
+    "anime style illustration, vibrant colors",
+    "oil painting, thick impasto brush strokes",
+    "cyberpunk style, neon lights, glowing magenta and cyan",
+    "pencil sketch, graphite drawing",
+    "watercolor painting, soft washes",
+    "pixel art, 16-bit retro game style",
+    "claymation, plasticine clay figure",
+    "white marble statue, carved stone"
+  ],
+  "prompt_cycle_interval_s": 20,
+  "input_smoothing_alpha": 1.0,
+  "worker_env": {
+    "TOKENIZERS_PARALLELISM": "false"
+  },
+  "worker": {
+    "model_id": "Lykon/dreamshaper-8",
+    "use_lcm_lora": true,
+    "t_index_list": [
+      22,
+      38
+    ],
+    "num_inference_steps": 50,
+    "acceleration": "none",
+    "use_tiny_vae": true,
+    "cfg_type": "self",
+    "guidance_scale": 1.2,
+    "delta": 0.8,
+    "seed": 2,
+    "use_denoising_batch": true,
+    "negative_prompt": "",
+    "engine_dir": "engines",
+    "controlnets": [
+      {
+        "name": "depth",
+        "model_id": "lllyasviel/control_v11f1p_sd15_depth",
+        "preprocessor": "depth",
+        "preprocessor_params": {
+          "model_name": "depth-anything/Depth-Anything-V2-Small-hf",
+          "detect_resolution": 378
+        },
+        "conditioning_scale": 0.5,
+        "enabled": true
+      },
+      {
+        "name": "canny",
+        "model_id": "lllyasviel/control_v11p_sd15_canny",
+        "preprocessor": "canny",
+        "preprocessor_params": {
+          "low_threshold": 100,
+          "high_threshold": 200
+        },
+        "conditioning_scale": 0.3,
+        "enabled": true
+      },
+      {
+        "name": "tile",
+        "model_id": "lllyasviel/control_v11f1e_sd15_tile",
+        "preprocessor": "passthrough",
+        "conditioning_scale": 0.4,
+        "enabled": false
+      },
+      {
+        "name": "softedge",
+        "model_id": "lllyasviel/control_v11p_sd15_softedge",
+        "preprocessor": "soft_edge",
+        "conditioning_scale": 0.4,
+        "enabled": false
+      },
+      {
+        "name": "openpose",
+        "model_id": "lllyasviel/control_v11p_sd15_openpose",
+        "preprocessor": "mediapipe_pose",
+        "preprocessor_params": {},
+        "conditioning_scale": 0.6,
+        "enabled": false
+      },
+      {
+        "name": "color",
+        "model_id": "lllyasviel/control_v11f1e_sd15_tile",
+        "preprocessor": "blur",
+        "preprocessor_params": {
+          "blur_intensity": 8.0,
+          "kernel_size": 41
+        },
+        "conditioning_scale": 0.4,
+        "enabled": false
+      }
+    ]
+  }
+}
