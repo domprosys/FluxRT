@@ -39,8 +39,16 @@ if ! command -v rsync >/dev/null || ! dpkg -s libgl1 >/dev/null 2>&1; then
   apt-get update -qq && apt-get install -y -qq rsync libgl1 libglib2.0-0 git-lfs >/dev/null
 fi
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
-[ -d "$REPO" ] || { echo "repo missing at $REPO (git clone it first)"; exit 1; }
-[ -d "$SD" ] || { echo "StreamDiffusion clone missing at $SD"; exit 1; }
+if [ ! -d "$REPO/.git" ]; then
+  [ "$MODE" = "--check" ] && { echo "MISSING: repo"; exit 1; }
+  log "cloning FluxRT fork (installation-controls)"
+  git clone -q --branch installation-controls https://github.com/domprosys/FluxRT.git "$REPO"
+fi
+if [ ! -d "$SD" ]; then
+  [ "$MODE" = "--check" ] && { echo "MISSING: StreamDiffusion clone"; exit 1; }
+  log "cloning daydreamlive/StreamDiffusion"
+  git clone -q --depth 1 https://github.com/daydreamlive/StreamDiffusion.git "$SD"
+fi
 
 # ── 2. venvs: restore snapshot from the volume, else build on local disk ─────
 if [ "$MODE" != "--snapshot" ] && [ ! -x $VENVS/fluxrt/bin/python ]; then
