@@ -34,8 +34,17 @@ def rest(method, path, body=None):
 
 
 class Pod:
-    def __init__(self, gpu, dc, volume, name):
+    def __init__(self, gpu, dc, volume, name, adopt=None):
         self.t0 = time.time()
+        if adopt:
+            self.info = rest("GET", f"/pods/{adopt}")
+            created = self.info.get("createdAt", "")[:19]  # '2026-09-23 05:26:12'
+            import datetime as _dt
+            self.t0 = _dt.datetime.strptime(created, "%Y-%m-%d %H:%M:%S").replace(tzinfo=_dt.timezone.utc).timestamp()
+            self.id = self.info["id"]
+            self.cost_hr = self.info.get("costPerHr")
+            self.ip = self.port = None
+            return
         self.info = rest("POST", "/pods", {
             "name": name, "imageName": IMAGE, "computeType": "GPU", "cloudType": "SECURE",
             "gpuTypeIds": [gpu], "gpuCount": 1, "dataCenterIds": [dc],
@@ -51,13 +60,14 @@ class Pod:
         return round(time.time() - self.t0, 1)
 
     def wait_ssh(self, timeout=900):
-        while time.time() - self.t0 < timeout:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
             d = rest("GET", f"/pods/{self.id}")
             pm = d.get("portMappings") or {}
             if d.get("publicIp") and pm.get("22"):
                 self.ip, self.port = d["publicIp"], int(pm["22"])
                 t_mapped = self.elapsed()
-                while time.time() - self.t0 < timeout:
+                while time.time() < deadline:
                     if self.ssh("true", timeout=20).returncode == 0:
                         return t_mapped, self.elapsed()
                     time.sleep(5)
@@ -69,6 +79,12 @@ class Pod:
             ["ssh", "-i", str(Path.home() / ".ssh/id_ed25519"), "-p", str(self.port),
              "-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=20", "-o", "ServerAliveInterval=30",
              f"root@{self.ip}", cmd], capture_output=True, text=True, timeout=timeout)
+
+    def start_server(self, cfg, logfile):
+        # setsid + </dev/null so the ssh session is released immediately
+        self.ssh(f"cd /workspace/fluxrt && HF_HOME=/workspace/hf setsid nohup .venv/bin/python scripts/serve_web.py "
+                 f"--config configs/{cfg}.json --port 8000 > {logfile} 2>&1 < /dev/null & disown; sleep 1; pgrep -f 'serve_web.p[y]' | head -1",
+                 timeout=60)
 
     def proxy_ready(self, timeout):
         url = f"https://{self.id}-8000.proxy.runpod.net/api/state"
@@ -102,6 +118,7 @@ def main():
     ap.add_argument("--volume", required=True)
     ap.add_argument("--tag", required=True)
     ap.add_argument("--skip-fluxrt", action="store_true")
+    ap.add_argument("--adopt", default=None, help="existing pod id: skip creation, keep its createdAt as t0")
     a = ap.parse_args()
     out = Path(".cache/bench"); out.mkdir(parents=True, exist_ok=True)
     res = {"gpu": a.gpu, "dc": a.dc, "volume": a.volume, "timeline_s": {}, "perf": {}, "notes": []}
@@ -114,9 +131,19 @@ def main():
     def log(msg):
         print(f"[{a.tag} +{pod.elapsed() if pod else 0}s] {msg}", flush=True)
     try:
-        pod = Pod(a.gpu, a.dc, a.volume, f"bench-{a.tag}")
+        pod = Pod(a.gpu, a.dc, a.volume, f"bench-{a.tag}", adopt=a.adopt)
         res["pod_id"], res["cost_per_hr"] = pod.id, pod.cost_hr
-        log(f"pod {pod.id} created, ${pod.cost_hr}/hr")
+        if a.adopt:
+            prev = out / f"{a.tag}.run1.log"
+            if prev.exists():
+                for line in prev.read_text().splitlines():
+                    m = re.match(rf"\[{a.tag} \+([0-9.]+)s\] (ssh usable|bootstrap done)", line)
+                    if m:
+                        res["timeline_s"]["ssh_usable_run1" if "ssh" in m.group(2) else "bootstrap_done_run1"] = float(m.group(1))
+                res["notes"].append("adopted existing pod; ssh/bootstrap milestones from the first driver run")
+            log(f"adopted pod {pod.id} (created {pod.info.get('createdAt','')[:19]} UTC), ${pod.cost_hr}/hr")
+        else:
+            log(f"pod {pod.id} created, ${pod.cost_hr}/hr")
         t_mapped, t_ssh = pod.wait_ssh()
         res["timeline_s"]["ssh_port_mapped"], res["timeline_s"]["ssh_usable"] = t_mapped, t_ssh
         log(f"ssh usable ({pod.ip}:{pod.port})")
@@ -140,7 +167,7 @@ def main():
             raise RuntimeError("bootstrap failed: " + r.stdout[-800:] + r.stderr[-400:])
 
         # SD server: deploy-to-ready
-        pod.ssh("cd /workspace/fluxrt && HF_HOME=/workspace/hf nohup .venv/bin/python scripts/serve_web.py --config configs/sd_config.json --port 8000 > /workspace/serve_sd.log 2>&1 &")
+        pod.start_server("sd_config", "/workspace/serve_sd.log")
         t, st = pod.proxy_ready(900)
         res["timeline_s"]["sd_server_ready"] = t
         res["perf"]["sd_server_state"] = {k: st.get(k) for k in ("model", "warmup_fps", "gpu_reserved_mb", "load_s")}
@@ -148,7 +175,7 @@ def main():
         pod.ssh("pkill -INT -f 'serve_web.p[y]'; sleep 3; pkill -9 -f 'sd_worke[r]'; true")
 
         if not a.skip_fluxrt:
-            pod.ssh("cd /workspace/fluxrt && HF_HOME=/workspace/hf nohup .venv/bin/python scripts/serve_web.py --config configs/web_config.json --port 8000 > /workspace/serve_fluxrt.log 2>&1 &")
+            pod.start_server("web_config", "/workspace/serve_fluxrt.log")
             t, st = pod.proxy_ready(1500)
             res["timeline_s"]["fluxrt_server_ready"] = t
             res["perf"]["fluxrt_server_state"] = {k: st.get(k) for k in ("gpu_reserved_mb",)}
