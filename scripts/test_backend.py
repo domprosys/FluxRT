@@ -30,7 +30,9 @@ def main():
     t0 = time.time()
     while not be.is_ready():
         if not be.alive():
-            print("worker died during setup"); return 1
+            print("worker died during setup", flush=True)
+            be.stop()  # also stops helper processes that would otherwise keep the interpreter alive
+            return 1
         time.sleep(0.5)
     print(f"ready in {time.time()-t0:.1f}s, resolution {w}x{h}, out {be.out_resolution[1]}x{be.out_resolution[0]}", flush=True)
     prompt = a.prompt or (cfg.get("prompt_cycle") or [cfg.get("default_prompt", "a painting")])[0]
