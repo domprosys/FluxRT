@@ -81,8 +81,9 @@ if [ "$SKIP_SD" != 1 ] && [ ! -x $VENVS/sd/bin/python ]; then
   DIFF_WHL=$(ls $WHEELS/diffusers-*.whl 2>/dev/null | head -1)
   if [ -n "$DIFF_WHL" ] && [ -f $LOCKS/sd.lock ]; then
     log "SD venv from lock + local diffusers wheel"
-    echo "diffusers @ file://$DIFF_WHL" > /root/sd_override.txt
-    retry uv pip install --python $VENVS/sd/bin/python "$DIFF_WHL" -r $LOCKS/sd.lock --override /root/sd_override.txt
+    # the lock is a full freeze of a working venv; install it verbatim (--no-deps), because its
+    # metadata isn't self-consistent (mediapipe pins protobuf below what onnx declares)
+    retry uv pip install --python $VENVS/sd/bin/python --no-deps "$DIFF_WHL" -r $LOCKS/sd.lock
     retry uv pip install --python $VENVS/sd/bin/python --no-deps -e $SD
   else
     (cd $SD && retry uv pip install --python $VENVS/sd/bin/python -e ".[xformers,controlnet]" peft "mediapipe==0.10.21")
@@ -94,7 +95,7 @@ if [ "$SKIP_SDV2" != 1 ] && [ -d "$SDV2" ] && [ ! -x $VENVS/sdv2/bin/python ]; t
   log "building StreamDiffusionV2 venv on local disk"
   uv venv --python 3.10 $VENVS/sdv2 >/dev/null
   retry uv pip install --python $VENVS/sdv2/bin/python torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
-  retry uv pip install --python $VENVS/sdv2/bin/python -r $LOCKS/sdv2.lock
+  retry uv pip install --python $VENVS/sdv2/bin/python --no-deps -r $LOCKS/sdv2.lock
   FA_WHL=$(ls $WHEELS/flash_attn-2.7.4*cp310*.whl 2>/dev/null | head -1)
   FA_WHL=${FA_WHL:-https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.4.post1/flash_attn-2.7.4.post1+cu12torch2.6cxx11abiFALSE-cp310-cp310-linux_x86_64.whl}
   retry uv pip install --python $VENVS/sdv2/bin/python --no-deps "$FA_WHL"
