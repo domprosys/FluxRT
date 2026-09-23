@@ -26,6 +26,8 @@ export HF_HOME=$WS/hf
 export UV_CACHE_DIR=$WS/.uv-cache
 export PATH="$HOME/.local/bin:$PATH"
 MODE=${1:-}
+SKIP_SD=${SKIP_SD:-0}   # SKIP_SD=1: FluxRT only (no StreamDiffusion venv/models)
+retry() { local n; for n in 1 2 3; do "$@" && return 0; log "attempt $n failed: $*"; sleep 10; done; return 1; }
 
 log() { echo "[setup $(date +%H:%M:%S)] $*"; }
 
@@ -44,7 +46,7 @@ if [ ! -d "$REPO/.git" ]; then
   log "cloning FluxRT fork (installation-controls)"
   git clone -q --branch installation-controls https://github.com/domprosys/FluxRT.git "$REPO"
 fi
-if [ ! -d "$SD" ]; then
+if [ "$SKIP_SD" != 1 ] && [ ! -d "$SD" ]; then
   [ "$MODE" = "--check" ] && { echo "MISSING: StreamDiffusion clone"; exit 1; }
   log "cloning daydreamlive/StreamDiffusion"
   git clone -q --depth 1 https://github.com/daydreamlive/StreamDiffusion.git "$SD"
@@ -63,27 +65,28 @@ mkdir -p $VENVS
 if [ ! -x $VENVS/fluxrt/bin/python ]; then
   log "building FluxRT venv on local disk"
   uv venv --python 3.12 $VENVS/fluxrt >/dev/null
-  uv pip install --python $VENVS/fluxrt/bin/python torch torchvision --index-url https://download.pytorch.org/whl/cu128
+  retry uv pip install --python $VENVS/fluxrt/bin/python torch torchvision --index-url https://download.pytorch.org/whl/cu128
   uv pip install --python $VENVS/fluxrt/bin/python -r $REPO/requirements.txt
   uv pip install --python $VENVS/fluxrt/bin/python -e $REPO
   NEW_VENV=1
 fi
-if [ ! -x $VENVS/sd/bin/python ]; then
+if [ "$SKIP_SD" != 1 ] && [ ! -x $VENVS/sd/bin/python ]; then
   log "building StreamDiffusion venv on local disk"
   uv venv --python 3.11 $VENVS/sd >/dev/null
-  uv pip install --python $VENVS/sd/bin/python torch==2.7.0 torchvision==0.22.0 --index-url https://download.pytorch.org/whl/cu128
-  (cd $SD && uv pip install --python $VENVS/sd/bin/python -e ".[xformers,controlnet]" peft "mediapipe==0.10.21")
+  retry uv pip install --python $VENVS/sd/bin/python torch==2.7.0 torchvision==0.22.0 --index-url https://download.pytorch.org/whl/cu128
+  (cd $SD && retry uv pip install --python $VENVS/sd/bin/python -e ".[xformers,controlnet]" peft "mediapipe==0.10.21")
   NEW_VENV=1
 fi
 # symlinks so the repo layout (and the configs' ../StreamDiffusion-daydream/.venv) keep working
-for pair in "$REPO/.venv:$VENVS/fluxrt" "$SD/.venv:$VENVS/sd"; do
+pairs="$REPO/.venv:$VENVS/fluxrt"; [ "$SKIP_SD" != 1 ] && pairs="$pairs $SD/.venv:$VENVS/sd"
+for pair in $pairs; do
   link=${pair%%:*}; target=${pair##*:}
   if [ -d "$link" ] && [ ! -L "$link" ]; then log "removing old on-volume venv $link"; rm -rf "$link"; fi
   [ -L "$link" ] || ln -s "$target" "$link"
 done
 $VENVS/fluxrt/bin/python -c "import torch, aiortc, fluxrt; print('fluxrt venv ok, torch', torch.__version__, 'cuda', torch.cuda.is_available())"
-$VENVS/sd/bin/python -c "import streamdiffusion, torch, mediapipe; print('sd venv ok, torch', torch.__version__)"
-if [ "${NEW_VENV:-}" = 1 ] || [ "$MODE" = "--snapshot" ] || [ ! -f $WS/venvs/venvs.tar ]; then
+[ "$SKIP_SD" = 1 ] || $VENVS/sd/bin/python -c "import streamdiffusion, torch, mediapipe; print('sd venv ok, torch', torch.__version__)"
+if [ "$SKIP_SD" != 1 ] && { [ "${NEW_VENV:-}" = 1 ] || [ "$MODE" = "--snapshot" ] || [ ! -f $WS/venvs/venvs.tar ]; }; then
   log "snapshotting venvs + interpreters to $WS/venvs/venvs.tar"
   mkdir -p $WS/venvs
   tar -cf $WS/venvs/venvs.tar.tmp -C / root/venvs root/uvpython && mv $WS/venvs/venvs.tar.tmp $WS/venvs/venvs.tar
@@ -110,7 +113,7 @@ if [ $need_flux = 1 ]; then
 fi
 
 # ── 4. SD / ControlNet models (HF cache on the volume) ──────────────────────
-if [ ! -d "$HF_HOME/hub/models--lllyasviel--control_v11p_sd15_openpose" ]; then
+if [ "$SKIP_SD" != 1 ] && [ ! -d "$HF_HOME/hub/models--lllyasviel--control_v11p_sd15_openpose" ]; then
   [ "$MODE" = "--check" ] && { echo "MISSING: SD models"; exit 1; }
   log "downloading SD models (~13 GB)"
   HF=$VENVS/fluxrt/bin/hf
