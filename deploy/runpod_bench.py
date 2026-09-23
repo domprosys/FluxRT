@@ -81,10 +81,15 @@ class Pod:
              f"root@{self.ip}", cmd], capture_output=True, text=True, timeout=timeout)
 
     def start_server(self, cfg, logfile):
-        # setsid + </dev/null so the ssh session is released immediately
-        self.ssh(f"cd /workspace/fluxrt && HF_HOME=/workspace/hf setsid nohup .venv/bin/python scripts/serve_web.py "
-                 f"--config configs/{cfg}.json --port 8000 > {logfile} 2>&1 < /dev/null & disown; sleep 1; pgrep -f 'serve_web.p[y]' | head -1",
-                 timeout=60)
+        # `setsid -f bash -c` is the only form found to release the ssh session
+        # promptly (a plain subshell/nohup background kept it open until the
+        # server exited).
+        inner = (f"cd /workspace/fluxrt && HF_HOME=/workspace/hf .venv/bin/python scripts/serve_web.py "
+                 f"--config configs/{cfg}.json --port 8000")
+        r = self.ssh(f"setsid -f bash -c '{inner}' > {logfile} 2>&1 < /dev/null; sleep 1; pgrep -f 'serve_web.p[y]' | head -1",
+                     timeout=60)
+        if not r.stdout.strip():
+            raise RuntimeError(f"server for {cfg} did not start: {r.stderr[-300:]}")
 
     def proxy_ready(self, timeout):
         url = f"https://{self.id}-8000.proxy.runpod.net/api/state"
