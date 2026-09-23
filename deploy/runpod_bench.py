@@ -27,7 +27,7 @@ def api_key():
 def rest(method, path, body=None):
     req = urllib.request.Request(f"{REST}{path}", method=method,
                                  data=json.dumps(body).encode() if body is not None else None,
-                                 headers={"Authorization": f"Bearer {api_key()}", "Content-Type": "application/json"})
+                                 headers={"Authorization": f"Bearer {api_key()}", "Content-Type": "application/json", **UA})
     with urllib.request.urlopen(req, timeout=60) as r:
         raw = r.read()
         return json.loads(raw) if raw else {}
