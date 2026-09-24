@@ -53,6 +53,10 @@ T_SECONDS=45 T_WARMUP=10
 eval "$(python3 deploy/config_needs.py configs/multi_all_config.json)"
 export SDV2_14B=1  # keep the stage-2 checkpoint "wanted" so the stamp check does not complain
 install all || exit 1
+# Session A follow-ups: SDXL-Turbo without ControlNet drifted off the input at t_index 22;
+# FaceID locked but the likeness was weak at scale 0.8
+T sdxl_t32   "$(cfgvar configs/sdxl_config.json t32 'worker.t_index_list=[32]')"
+T faceid_s12 "$(cfgvar configs/sd_controlnet_faceid_config.json s12 worker.ipadapter.scale=1.2)" --set 60:faceid_capture=true
 multi_run multi_all configs/multi_all_config.json 80 "12:flux 18:sdxl 18:sdv2 18:sd"
 # the 14B next to the others, if it fits (flux ~18 + sd ~5 + sdxl ~12 + 14B ~50 GB): an OOM is a result too
 c=$(cfgvar configs/multi_all_config.json multi_14b 'engines.sdv2.config="sdv2_14b_config"' 'engines.sdv2.resolution={"height":448,"width":448}')
