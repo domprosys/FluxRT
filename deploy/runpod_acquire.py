@@ -144,9 +144,10 @@ class _Pending:
 def _create(cfg: dict, cand: dict) -> tuple[str | None, dict | str]:
     p = cfg["pod"]
     disk = int(cfg.get("_disk_gb") or 0)
+    container = int(cfg.get("_container_gb") or 0) or max(p.get("container_disk_gb", 40), 80 if disk else 0)
     body = {"name": f"fluxrt-{cand['short'].lower()}-{cand['dc'].lower()}", "imageName": p["image"],
             "computeType": "GPU", "cloudType": p.get("cloud", "SECURE"), "gpuTypeIds": [cand["gpu"]], "gpuCount": 1,
-            "dataCenterIds": [cand["dc"]], "containerDiskInGb": max(p.get("container_disk_gb", 40), 80 if disk else 0),
+            "dataCenterIds": [cand["dc"]], "containerDiskInGb": container,
             "volumeInGb": 0 if cand.get("volume") else (disk or 150),
             "volumeMountPath": "/workspace", "ports": p["ports"],
             "supportPublicIp": True, "env": p.get("env", {})}
@@ -300,6 +301,8 @@ def main() -> int:
     a.add_argument("--no-volume", action="store_true", help="any region, pod-local disk (cold setup)")
     a.add_argument("--gpus", default=None, help="comma-separated GPU short names to allow, e.g. PRO6000-S,PRO6000-W")
     a.add_argument("--disk-gb", type=int, default=0, help="pod-local /workspace size for --no-volume (default 150)")
+    a.add_argument("--container-gb", type=int, default=0,
+                   help="container disk size (local; /workspace can be a network fs even without a volume)")
     r = sub.add_parser("release")
     r.add_argument("pod_id", nargs="?")
     g = sub.add_parser("guard", help="terminate a pod after a hard time cap (run in the background)")
@@ -338,6 +341,8 @@ def main() -> int:
     try:
         if args.disk_gb:
             cfg["_disk_gb"] = args.disk_gb
+        if args.container_gb:
+            cfg["_container_gb"] = args.container_gb
         pod = acquire(cfg, timeout_min=args.timeout, no_volume=args.no_volume,
                       gpu_filter=args.gpus.split(",") if args.gpus else None)
     except Exception:

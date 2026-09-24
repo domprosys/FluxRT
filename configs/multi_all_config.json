@@ -1,0 +1,15 @@
+{
+  "backend": "multi",
+  "_comment": "multi_config + StreamDiffusionV2 1.3B: four engines resident (RTX PRO 6000 class). Wan needs multiples of 16, hence 640x352.",
+  "resolution": {"height": 576, "width": 1024},
+  "out_resolution": {"height": 368, "width": 640},
+  "default_engine": "sd",
+  "crossfade_s": 1.5,
+  "input_smoothing_alpha": 1.0,
+  "engines": {
+    "flux": {"config": "web_bf16_liveportrait_config"},
+    "sd":   {"config": "sd_controlnet_faceid_config", "resolution": {"height": 384, "width": 640}},
+    "sdxl": {"config": "sdxl_controlnet_config", "resolution": {"height": 384, "width": 640}},
+    "sdv2": {"config": "sdv2_config", "resolution": {"height": 352, "width": 640}}
+  }
+}
