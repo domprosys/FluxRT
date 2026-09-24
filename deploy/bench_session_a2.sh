@@ -16,8 +16,9 @@ source deploy/bench_lib.sh
 T flux_lp_driving     "$(cfgvar configs/web_bf16_liveportrait_config.json lp_driving 'lip_transfer.source_crop="driving"')"
 
 # ── all engines resident with TensorRT (the template's ENABLE_TRT=1 path) ──
+# first start builds the FaceID+CN and SDXL+CN UNets and the SDXL ControlNet engines (serialized)
 export SD_ACCELERATION=tensorrt
-multi_run multi_trt configs/multi_config.json 50 "12:sdxl 15:flux 15:sd"
+MULTI_WAIT_S=1800 multi_run multi_trt configs/multi_config.json 50 "12:sdxl 15:flux 15:sd"
 unset SD_ACCELERATION
 
 T flux_lp_driving_exp "$(cfgvar configs/web_bf16_liveportrait_config.json lp_driving_exp 'lip_transfer.source_crop="driving"' 'lip_transfer.region="exp"')"

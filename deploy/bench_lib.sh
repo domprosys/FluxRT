@@ -40,14 +40,15 @@ EOF
 }
 
 # multi_run name config stream_seconds "delay:engine delay:engine ..."
-# Starts serve_web with a multi config, waits until every engine is ready (max 20 min), records
+# Starts serve_web with a multi config, waits until every engine is ready (max MULTI_WAIT_S, default
+# 20 min), records
 # VRAM, streams the clip over WebRTC as the stage and switches engines at the given delays.
 multi_run() {
   local name=$1 cfg=$2 secs=$3 plan=$4 st="" t0 i pair eng cpid
   say "=== $name: server with $cfg"
   setsid $PY scripts/serve_web.py --config "$cfg" --port 8000 > "$OUT/${name}_server.log" 2>&1 < /dev/null &
   t0=$(date +%s)
-  for i in $(seq 1 240); do
+  for i in $(seq 1 $(( ${MULTI_WAIT_S:-1200} / 5 ))); do
     st=$(curl -s -m 5 http://127.0.0.1:8000/api/state || true)
     if echo "$st" | python3 -c "import json,sys; d=json.load(sys.stdin); sys.exit(0 if d.get('engines') and all(e['ready'] for e in d['engines']) else 1)" 2>/dev/null; then break; fi
     sleep 5
