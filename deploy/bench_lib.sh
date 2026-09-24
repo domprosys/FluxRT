@@ -41,8 +41,8 @@ EOF
 
 # multi_run name config stream_seconds "delay:engine delay:engine ..."
 # Starts serve_web with a multi config, waits until every engine is ready (max MULTI_WAIT_S, default
-# 20 min), records
-# VRAM, streams the clip over WebRTC as the stage and switches engines at the given delays.
+# 20 min), records VRAM, streams the clip over WebRTC as the stage and switches engines at the given
+# delays.
 multi_run() {
   local name=$1 cfg=$2 secs=$3 plan=$4 st="" t0 i pair eng cpid
   say "=== $name: server with $cfg"
