@@ -560,14 +560,18 @@ class SDWorker(WorkerBase):
                 name = str(c.get("name") or c.get("type") or f"cn{i}")
                 self.cn_names.append(name)
                 self.cn_meta.append({"name": name, "model_id": c["model_id"], "preprocessor": c.get("preprocessor")})
-                cn_config.append({
+                entry = {
                     "model_id": c["model_id"],
                     "preprocessor": c.get("preprocessor"),
                     "conditioning_scale": float(c.get("conditioning_scale", 0.5)),
                     "enabled": bool(c.get("enabled", True)),
                     "preprocessor_params": c.get("preprocessor_params"),
-                    "conditioning_channels": c.get("conditioning_channels"),
-                })
+                }
+                # only when set: the fork's TensorRT path does cfg.get("conditioning_channels", 3), so an
+                # explicit None reached torch.randn and every ControlNet engine build failed (PyTorch fallback)
+                if c.get("conditioning_channels") is not None:
+                    entry["conditioning_channels"] = int(c["conditioning_channels"])
+                cn_config.append(entry)
 
         self.cached = self._cached_attn_config(w)
         if self.cached and self.acceleration != "tensorrt":
