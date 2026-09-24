@@ -470,8 +470,12 @@ class KVOCacheShim:
         unet.forward = forward
 
     def reset(self) -> None:
-        for t in self.stream.kvo_cache:
-            t.zero_()
+        import torch
+
+        # the cache tensors are created inside inference_mode; in-place ops on them must be too
+        with torch.inference_mode():
+            for t in self.stream.kvo_cache:
+                t.zero_()
         self.stream.frame_idx = 0
 
 
@@ -675,8 +679,9 @@ class SDWorker(WorkerBase):
         torch.cuda.synchronize()
         fps = n / max(time.perf_counter() - t1, 1e-6)
         if getattr(s, "kvo_cache", None):  # don't start the stream remembering grey frames
-            for t in s.kvo_cache:
-                t.zero_()
+            with torch.inference_mode():  # inference tensors: in-place ops only inside inference_mode
+                for t in s.kvo_cache:
+                    t.zero_()
             s.frame_idx = 0
         self.emit(
             "info",
@@ -749,6 +754,10 @@ class SDWorker(WorkerBase):
     def _cache_command(self, pname: str, value) -> bool:
         if pname not in ("cache_maxframes", "cache_interval", "use_cached_attn"):
             return False
+        with self.torch.inference_mode():   # cache buffers are inference tensors
+            return self._cache_command_inner(pname, value)
+
+    def _cache_command_inner(self, pname: str, value) -> bool:
         if not self.cached:
             raise ValueError("cached attention is off (start the worker with worker.use_cached_attn: true)")
         if pname == "use_cached_attn":
