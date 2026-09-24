@@ -1,0 +1,17 @@
+# TensorRT add-on for the SD venv (torch 2.7.0+cu128, py3.11). Installed verbatim with --no-deps by
+# deploy/setup_trt.sh (NVIDIA index first: the tensorrt-cu12-libs wheel is only on pypi.nvidia.com).
+# TensorRT 10.12 = the fork's own pin (src/streamdiffusion/tools/install-tensorrt.py); Blackwell
+# (sm_120) is supported since 10.8. Its cuDNN pin (9.7.1.26) is already in the venv via torch.
+tensorrt==10.12.0.36
+tensorrt-cu12==10.12.0.36
+tensorrt-cu12-libs==10.12.0.36
+tensorrt-cu12-bindings==10.12.0.36
+# cuda-python matching torch's CUDA 12.8; 12.x still ships the legacy `from cuda import cudart` the fork uses
+cuda-python==12.8.0
+cuda-bindings==12.8.0
+polygraphy==0.49.24
+onnx-graphsurgeon==0.5.8
+colored==2.2.4
+# sd.lock has onnx 1.23.0, which cannot even be imported next to the protobuf 4.25 that mediapipe needs
+# (onnx_pb2 wants protobuf>=5 runtime_version); 1.18.0 = the fork's pin, generated with protobuf 4.25.1
+onnx==1.18.0

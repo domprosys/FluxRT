@@ -39,6 +39,8 @@ def main():
     ap.add_argument("--json", default=None, help="write benchmark results here")
     ap.add_argument("--out", default=".cache/test_backend")
     ap.add_argument("--prompt", default=None)
+    ap.add_argument("--set", action="append", default=[], metavar="FRAME:NAME=VALUE",
+                    help="send set_param NAME=VALUE (JSON value) when input frame FRAME is pushed, e.g. 100:faceid_capture=true")
     a = ap.parse_args()
     cfg = json.load(open(a.config))
     be = build_backend(a.config, cfg)
@@ -64,6 +66,12 @@ def main():
             print(f"cannot open {a.video}"); be.stop(); return 1
     cap = cv2.VideoCapture(a.device) if (video is None and a.device >= 0) else None
     sample_at = {int(x) for x in a.samples.split(",") if x.strip()}
+    timed = {}
+    for spec in a.set:
+        f, kv = spec.split(":", 1); k, v = kv.split("=", 1)
+        try: v = json.loads(v)
+        except json.JSONDecodeError: pass
+        timed.setdefault(int(f), []).append((k, v))
 
     n = 0; last_stat = time.time(); t_start = time.time(); last_out = None; frame = None
     gen_samples, gpu_samples = [], []
@@ -87,6 +95,8 @@ def main():
                 cv2.putText(frame, f"synthetic {n}", (40, 80), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 3)
         inp = crop_maximal_rectangle(frame, h, w)
         be.push_input(inp)
+        for k, v in timed.get(n, []):
+            print(f"frame {n}: set_param {k}={v!r}", flush=True); be.set_param(k, v)
         if n in sample_at:
             # the matching output appears ~one generation later; save it a few frames on
             cv2.imwrite(str(out_dir / f"in_{n:04d}.png"), inp)
@@ -141,7 +151,9 @@ def main():
             "temporal_diff": round(sum(diffs) / len(diffs), 2) if diffs else (0.0 if last_out is not None else None),
             "static_input": bool(a.static),
             "interpolation_exp": stats.get("interpolation_exp"),
-            "stats_last": {k: v for k, v in stats.items() if k in ("proc_time_s", "model", "warmup_fps", "chunk_size", "native_fps", "vae_type")},
+            "stats_last": {k: v for k, v in stats.items() if k in ("proc_time_s", "model", "warmup_fps", "chunk_size", "native_fps", "vae_type",
+                                                                  "acceleration", "unet_runtime", "ipadapter", "lip_transfer", "attention", "model_size",
+                                                                  "use_cached_attn", "cache_maxframes", "text_encoder_device")},
         }
         Path(a.json).write_text(json.dumps(res, indent=2))
         print("BENCH " + json.dumps(res), flush=True)

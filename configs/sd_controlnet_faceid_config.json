@@ -6,16 +6,16 @@
         "width": 512,
         "height": 512
     },
-    "default_prompt": "anime style illustration, vibrant colors",
+    "default_prompt": "portrait of a person as an anime character, vibrant colors, clean line art",
     "prompt_cycle": [
-        "anime style illustration, vibrant colors",
-        "oil painting, thick impasto brush strokes",
-        "cyberpunk style, neon lights, glowing magenta and cyan",
-        "pencil sketch, graphite drawing",
-        "watercolor painting, soft washes",
-        "pixel art, 16-bit retro game style",
-        "claymation, plasticine clay figure",
-        "white marble statue, carved stone"
+        "portrait of a person as an anime character, vibrant colors, clean line art",
+        "portrait of a person as a renaissance oil painting, dramatic chiaroscuro",
+        "portrait of a person as a comic book hero, bold ink lines, halftone dots",
+        "portrait of a person in cyberpunk style, neon magenta and cyan light",
+        "portrait of a person as a white marble statue, carved stone",
+        "portrait of a person as a watercolor painting, soft washes",
+        "portrait of a person as a claymation figure, plasticine",
+        "portrait of a person as a graphite pencil sketch"
     ],
     "prompt_cycle_interval_s": 20,
     "input_smoothing_alpha": 1.0,
@@ -26,8 +26,8 @@
         "model_id": "Lykon/dreamshaper-8",
         "use_lcm_lora": true,
         "t_index_list": [
-            22,
-            38
+            18,
+            35
         ],
         "num_inference_steps": 50,
         "acceleration": "none",
@@ -61,42 +61,24 @@
                 },
                 "conditioning_scale": 0.3,
                 "enabled": true
-            },
-            {
-                "name": "tile",
-                "model_id": "lllyasviel/control_v11f1e_sd15_tile",
-                "preprocessor": "passthrough",
-                "conditioning_scale": 0.4,
-                "enabled": false
-            },
-            {
-                "name": "softedge",
-                "model_id": "lllyasviel/control_v11p_sd15_softedge",
-                "preprocessor": "soft_edge",
-                "conditioning_scale": 0.4,
-                "enabled": false
-            },
-            {
-                "name": "openpose",
-                "model_id": "lllyasviel/control_v11p_sd15_openpose",
-                "preprocessor": "mediapipe_pose",
-                "preprocessor_params": {},
-                "conditioning_scale": 0.6,
-                "enabled": false
-            },
-            {
-                "name": "color",
-                "model_id": "lllyasviel/control_v11f1e_sd15_tile",
-                "preprocessor": "blur",
-                "preprocessor_params": {
-                    "blur_intensity": 8.0,
-                    "kernel_size": 41
-                },
-                "conditioning_scale": 0.4,
-                "enabled": false
             }
-        ]
+        ],
+        "use_ipadapter": true,
+        "ipadapter": {
+            "type": "faceid",
+            "ipadapter_model_path": "h94/IP-Adapter-FaceID/ip-adapter-faceid_sd15.bin",
+            "image_encoder_path": "h94/IP-Adapter/models/image_encoder",
+            "insightface_model_name": "buffalo_l",
+            "scale": 0.8,
+            "num_image_tokens": 4,
+            "reference_image": null
+        },
+        "use_cached_attn": false,
+        "cache_maxframes": 2,
+        "cache_interval": 1,
+        "max_cache_maxframes": 8
     },
+    "_note": "Dreamshaper-8 + LCM, depth+canny, IP-Adapter FaceID (plain FaceID; the FaceID-Plus checkpoints are not loadable by Diffusers_IPAdapter). No identity until set_param faceid_capture=true (locks onto the face in the next input frame) or ipadapter_image=<path>; reference_image sets one at start. Needs deploy/setup_faceid.sh (bootstrap: WITH_FACEID, derived from use_ipadapter).",
     "hf_models": [
         "Lykon/dreamshaper-8::model_index.json,scheduler/*,tokenizer/*,feature_extractor/*,safety_checker/config.json,safety_checker/model.safetensors,text_encoder/config.json,text_encoder/model.safetensors,unet/config.json,unet/diffusion_pytorch_model.safetensors,vae/config.json,vae/diffusion_pytorch_model.safetensors",
         "latent-consistency/lcm-lora-sdv1-5::pytorch_lora_weights.safetensors",
@@ -104,8 +86,8 @@
         "depth-anything/Depth-Anything-V2-Small-hf",
         "lllyasviel/control_v11f1p_sd15_depth::config.json,diffusion_pytorch_model.safetensors",
         "lllyasviel/control_v11p_sd15_canny::config.json,diffusion_pytorch_model.safetensors",
-        "lllyasviel/control_v11f1e_sd15_tile::config.json,diffusion_pytorch_model.bin",
-        "lllyasviel/control_v11p_sd15_softedge::config.json,diffusion_pytorch_model.safetensors",
-        "lllyasviel/control_v11p_sd15_openpose::config.json,diffusion_pytorch_model.safetensors"
+        "h94/IP-Adapter-FaceID::ip-adapter-faceid_sd15.bin",
+        "h94/IP-Adapter::models/image_encoder/config.json,models/image_encoder/model.safetensors",
+        "public-data/insightface::models/buffalo_l/det_10g.onnx,models/buffalo_l/w600k_r50.onnx"
     ]
 }

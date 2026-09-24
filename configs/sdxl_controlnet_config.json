@@ -1,0 +1,106 @@
+{
+    "backend": "sd",
+    "python": "../StreamDiffusion-daydream/.venv/bin/python",
+    "worker_cwd": "../StreamDiffusion-daydream",
+    "resolution": {
+        "width": 512,
+        "height": 512
+    },
+    "default_prompt": "a vibrant anime illustration, cel shading, clean line art, studio ghibli colors",
+    "prompt_cycle": [
+        "a vibrant anime illustration, cel shading, clean line art, studio ghibli colors",
+        "an oil painting with thick impasto brush strokes, warm dramatic lighting",
+        "a cyberpunk portrait, neon magenta and cyan rim light, rainy night city",
+        "a detailed graphite pencil sketch on textured paper, cross hatching",
+        "a soft watercolor painting, bleeding pigment washes, white paper",
+        "16-bit pixel art, retro video game sprite, limited palette",
+        "a claymation character, plasticine texture, stop motion studio lighting",
+        "a white marble statue, carved stone, museum spotlight"
+    ],
+    "prompt_cycle_interval_s": 20,
+    "input_smoothing_alpha": 1.0,
+    "worker_env": {
+        "TOKENIZERS_PARALLELISM": "false"
+    },
+    "worker": {
+        "model_id": "stabilityai/sdxl-turbo",
+        "variant": "fp16",
+        "vae_id": "madebyollin/taesdxl",
+        "t_index_list": [
+            18
+        ],
+        "num_inference_steps": 50,
+        "acceleration": "none",
+        "use_tiny_vae": true,
+        "cfg_type": "none",
+        "guidance_scale": 1.0,
+        "delta": 1.0,
+        "seed": 2,
+        "use_denoising_batch": true,
+        "negative_prompt": "",
+        "use_cached_attn": false,
+        "cache_maxframes": 2,
+        "cache_interval": 1,
+        "max_cache_maxframes": 8,
+        "controlnets": [
+            {
+                "name": "depth",
+                "model_id": "diffusers/controlnet-depth-sdxl-1.0",
+                "preprocessor": "depth",
+                "preprocessor_params": {
+                    "model_name": "depth-anything/Depth-Anything-V2-Small-hf",
+                    "detect_resolution": 378
+                },
+                "conditioning_scale": 0.5,
+                "enabled": true
+            },
+            {
+                "name": "canny",
+                "model_id": "diffusers/controlnet-canny-sdxl-1.0",
+                "preprocessor": "canny",
+                "preprocessor_params": {
+                    "low_threshold": 100,
+                    "high_threshold": 200
+                },
+                "conditioning_scale": 0.3,
+                "enabled": true
+            }
+        ]
+    },
+    "_note": "SDXL-Turbo + SDXL depth/canny ControlNets (full size, ~1.25B params each: roughly +40% of the UNet cost per net). 1 step at t_index 18 (t~639): the nets hold the structure, so more denoise.",
+    "_alt_controlnets_small": [
+        {
+            "name": "depth",
+            "model_id": "diffusers/controlnet-depth-sdxl-1.0-small",
+            "preprocessor": "depth",
+            "preprocessor_params": {
+                "model_name": "depth-anything/Depth-Anything-V2-Small-hf",
+                "detect_resolution": 378
+            },
+            "conditioning_scale": 0.5,
+            "enabled": true
+        },
+        {
+            "name": "canny",
+            "model_id": "diffusers/controlnet-canny-sdxl-1.0-small",
+            "preprocessor": "canny",
+            "preprocessor_params": {
+                "low_threshold": 100,
+                "high_threshold": 200
+            },
+            "conditioning_scale": 0.3,
+            "enabled": true
+        }
+    ],
+    "_alt_resolution_16x9": {
+        "width": 640,
+        "height": 384
+    },
+    "hf_models": [
+        "stabilityai/sdxl-turbo::model_index.json,scheduler/*,tokenizer/*,tokenizer_2/*,text_encoder/config.json,text_encoder/model.fp16.safetensors,text_encoder_2/config.json,text_encoder_2/model.fp16.safetensors,unet/config.json,unet/diffusion_pytorch_model.fp16.safetensors,vae/config.json,vae/diffusion_pytorch_model.fp16.safetensors",
+        "madebyollin/taesdxl::config.json,diffusion_pytorch_model.safetensors",
+        "depth-anything/Depth-Anything-V2-Small-hf",
+        "diffusers/controlnet-depth-sdxl-1.0::config.json,diffusion_pytorch_model.fp16.safetensors",
+        "diffusers/controlnet-canny-sdxl-1.0::config.json,diffusion_pytorch_model.fp16.safetensors"
+    ]
+}

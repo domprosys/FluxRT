@@ -40,6 +40,7 @@
   <div id="msg"></div>
   <div id="engines" style="display:none; width:100%; gap:6px; flex-wrap:wrap; align-items:center"></div>
   <div id="chips"></div>
+  <div id="tools" style="display:none; width:100%; gap:8px; flex-wrap:wrap; align-items:center"></div>
   <div id="cnets" style="display:none; width:100%; gap:10px; flex-wrap:wrap; align-items:center"></div>
   <select id="cam" title="camera"></select>
   <button id="go" class="primary">Start camera</button>
@@ -141,6 +142,37 @@ async function post(url, body) {
   else say(url + ' → ' + r.status);
 }
 
+function renderTools(s) {
+  const box = $('tools');
+  const ip = s.ipadapter && s.ipadapter.type ? s.ipadapter : null;
+  const lp = s.lip_transfer && s.lip_transfer.available ? s.lip_transfer : null;
+  if (!ip && !lp) { box.style.display = 'none'; box.dataset.key = ''; return; }
+  box.style.display = 'flex';
+  const key = (ip ? 'ip' : '') + (lp ? 'lp' : '');
+  if (box.dataset.key !== key) {
+    box.dataset.key = key;
+    box.innerHTML =
+      (ip ? `<button id="faceCap" title="lock the style onto the visitor's face (FaceID)">Capture face</button>
+             <button id="faceClr">Clear face</button>
+             <label>identity <input id="ipScale" type="range" min="0" max="1.5" step="0.05" style="width:90px"><span id="ipScaleV"></span></label>
+             <span id="faceInfo" style="color:var(--mut);font-size:12px"></span>` : '') +
+      (lp ? `<button id="lipTog" title="LivePortrait: transfer the visitor's lips/expression onto the stylised face">Expressions</button>` : '');
+    if (ip) {
+      $('faceCap').onclick = () => post('/api/gen', { name: 'faceid_capture', value: true });
+      $('faceClr').onclick = () => post('/api/gen', { name: 'faceid_clear', value: true });
+      $('ipScale').oninput = () => $('ipScaleV').textContent = (+$('ipScale').value).toFixed(2);
+      $('ipScale').onchange = () => post('/api/gen', { name: 'ipadapter_scale', value: +$('ipScale').value });
+    }
+    if (lp) $('lipTog').onclick = () => post('/api/gen', { name: 'lip_transfer', value: !(state.lip_transfer && state.lip_transfer.active) });
+  }
+  if (ip) {
+    if (document.activeElement !== $('ipScale')) { $('ipScale').value = ip.scale; $('ipScaleV').textContent = (+ip.scale).toFixed(2); }
+    const f = ip.faceid || ip.image || {};
+    $('faceInfo').textContent = f.locked ? `face locked${f.source ? ' (' + f.source + ')' : ''}` : (f.last === 'no_face' ? 'no face found, try again' : 'no face locked');
+  }
+  if (lp) { $('lipTog').classList.toggle('on', !!lp.active); $('lipTog').textContent = 'Expressions ' + (lp.active ? 'on' : 'off'); }
+}
+
 function renderEngines(s) {
   const box = $('engines');
   if (!Array.isArray(s.engines) || !s.engines.length) { box.style.display = 'none'; return; }
@@ -176,6 +208,7 @@ function render(s) {
   if (document.activeElement !== $('alpha')) { $('alpha').value = s.smoothing_alpha; $('alphav').textContent = (+s.smoothing_alpha).toFixed(2); }
   $('rifeLabel').style.display = ('interpolation_exp' in s) ? '' : 'none';
   renderCnets(s.controlnets);
+  renderTools(s);
   if ('interpolation_exp' in s && document.activeElement !== $('rife')) $('rife').value = String(s.interpolation_exp);
   const conn = pc ? pc.connectionState : 'idle';
   const name = s.active_engine ? `${s.active_engine}` : s.backend;

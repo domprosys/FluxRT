@@ -59,7 +59,8 @@ fi
 if [ "$SKIP_SD" != 1 ] && [ ! -d "$SD" ]; then
   [ "$MODE" = "--check" ] && { echo "MISSING: StreamDiffusion clone"; exit 1; }
   log "cloning daydreamlive/StreamDiffusion"
-  retry git clone -q --depth 1 https://github.com/daydreamlive/StreamDiffusion.git "$SD"
+  # pinned: sd_worker.py monkeypatches depend on this fork commit
+  rm -rf "$SD.tmp"; retry git clone -q https://github.com/daydreamlive/StreamDiffusion.git "$SD.tmp" && git -C "$SD.tmp" checkout -q 4c90d9e437aa28cca7cae1acfab1e52157261939 && mv "$SD.tmp" "$SD"
 fi
 
 # ── 2. venvs: restore snapshot from the volume, else build on local disk ─────
@@ -174,6 +175,7 @@ fi
 # ── 4a. extra models listed in the configs' "hf_models" (EXTRA_HF_MODELS, from config_needs.py) ──
 if [ -n "${EXTRA_HF_MODELS:-}" ] && [ "$MODE" != "--check" ]; then
   HF=$VENVS/fluxrt/bin/hf
+  set -f   # specs contain globs like scheduler/*: never let the shell expand them
   for spec in $EXTRA_HF_MODELS; do
     repo=${spec%%::*}
     if [ "$spec" != "$repo" ]; then
@@ -184,6 +186,7 @@ if [ -n "${EXTRA_HF_MODELS:-}" ] && [ "$MODE" != "--check" ]; then
     fi
     log "  hf model: $spec"
   done
+  set +f
 fi
 
 # ── 4b. StreamDiffusionV2 weights (1.3B always; 14B when SDV2_14B=1), size-checked ──

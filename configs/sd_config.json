@@ -56,5 +56,9 @@
         "seed": 2,
         "use_denoising_batch": true,
         "negative_prompt": ""
-    }
+    },
+    "hf_models": [
+        "stabilityai/sd-turbo::model_index.json,scheduler/*,tokenizer/*,text_encoder/config.json,text_encoder/model.safetensors,unet/config.json,unet/diffusion_pytorch_model.safetensors,vae/config.json,vae/diffusion_pytorch_model.safetensors",
+        "madebyollin/taesd::config.json,diffusion_pytorch_model.safetensors"
+    ]
 }

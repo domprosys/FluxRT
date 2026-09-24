@@ -1,0 +1,14 @@
+{
+  "backend": "multi",
+  "_comment": "All engines resident, switch from the page (engine row) or POST /api/engine {name}. 16:9 canvases; square engines run at 16:9 via the per-engine resolution overrides.",
+  "resolution": {"height": 576, "width": 1024},
+  "out_resolution": {"height": 368, "width": 640},
+  "default_engine": "sd",
+  "crossfade_s": 1.5,
+  "input_smoothing_alpha": 1.0,
+  "engines": {
+    "flux": {"config": "web_bf16_liveportrait_config"},
+    "sd":   {"config": "sd_controlnet_faceid_config", "resolution": {"height": 384, "width": 640}},
+    "sdxl": {"config": "sdxl_controlnet_config", "resolution": {"height": 384, "width": 640}}
+  }
+}

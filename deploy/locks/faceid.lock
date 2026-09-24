@@ -1,0 +1,26 @@
+# IP-Adapter FaceID add-on for the SD venv (py3.11, numpy 1.26.4, protobuf 4.25). Installed verbatim with
+# --no-deps by deploy/setup_faceid.sh; insightface (sdist only) and diffusers-ipadapter (GitHub) are
+# installed by the script itself.
+# onnxruntime-gpu 1.23.2 = the fork's pin; PyPI builds are for CUDA 12.x + cuDNN 9 (both in the venv via torch)
+onnxruntime-gpu==1.23.2
+coloredlogs==15.0.1
+humanfriendly==10.0
+# insightface.app imports albumentations (mask renderer) at import time
+albumentations==1.4.24
+albucore==0.0.23
+stringzilla==3.12.6
+simsimd==6.5.0
+pydantic==2.11.7
+pydantic-core==2.33.2
+annotated-types==0.7.0
+typing-inspection==0.4.1
+easydict==1.13
+prettytable==3.16.0
+wcwidth==0.2.13
+scikit-learn==1.6.1
+joblib==1.5.1
+threadpoolctl==3.6.0
+cython==3.1.2
+# insightface's model zoo imports onnx; sd.lock's onnx 1.23.0 cannot be imported next to protobuf 4.25
+# (mediapipe's pin). 1.18.0 = the fork's pin, generated with protobuf 4.25.1 (same pin as trt.lock)
+onnx==1.18.0

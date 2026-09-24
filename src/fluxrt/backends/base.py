@@ -53,6 +53,8 @@ class FluxRTBackend(Backend):
         from fluxrt import StreamProcessor
 
         self.sp = StreamProcessor(config_path)
+        self._lip_available = bool((cfg.get("lip_transfer") or {}).get("enable"))
+        self._lip_active = self._lip_available and bool((cfg.get("lip_transfer") or {}).get("start_active"))
         if force_int8 or cfg.get("enable_int8_quantization", False):
             self.sp.enable_quantization()
         self.in_t = self.sp.get_input_tensor()
@@ -88,6 +90,7 @@ class FluxRTBackend(Backend):
 
     def set_param(self, name: str, value) -> None:
         if name == "lip_transfer":          # LivePortrait expression/lip transfer on/off
+            self._lip_active = bool(value) and self._lip_available
             self.sp.set_lip_transfer(bool(value))
         else:
             self.sp.set_gen_param(name, value)
@@ -98,4 +101,5 @@ class FluxRTBackend(Backend):
             "proc_time_s": round(proc, 4),
             "gpu_reserved_mb": self.sp.get_reserved_memory(),
             "interpolation_exp": self.sp.interpolation_exp_value.value,
+            **({"lip_transfer": {"available": True, "active": self._lip_active}} if self._lip_available else {}),
         }
