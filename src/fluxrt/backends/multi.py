@@ -90,6 +90,7 @@ class MultiBackend(Backend):
         self.prev: str | None = None
         self.fade_t0: float | None = None
         self._paused: set[str] = set()
+        self._pause_when_ready: set[str] = set()
 
     # -- lifecycle -----------------------------------------------------------
     def start(self) -> None:
@@ -97,9 +98,9 @@ class MultiBackend(Backend):
         for e in self.engines.values():
             log.info("starting engine %s (%s, %s)", e.name, e.backend.name, Path(e.config_path).name)
             e.backend.start()
-        for e in self.engines.values():
-            if e.name != self.active:
-                self._pause(e)
+        # Inactive engines are paused once they report ready, not before: FluxRT only counts as
+        # ready after its first output frame, which a paused engine never produces.
+        self._pause_when_ready = {n for n in self.engines if n != self.active}
 
     def stop(self) -> None:
         for e in self.engines.values():
@@ -119,6 +120,12 @@ class MultiBackend(Backend):
         self._paused.discard(e.name)
 
     # -- readiness / prompts ---------------------------------------------------
+    def _pause_ready_engines(self) -> None:
+        for name in [n for n in self._pause_when_ready if self.engines[n].backend.is_ready()]:
+            self._pause_when_ready.discard(name)
+            if name not in (self.active, self.prev):
+                self._pause(self.engines[name])
+
     def _send_initial_prompts(self) -> None:
         for e in self.engines.values():
             if not e.prompted and not e.is_fluxrt and e.backend.is_ready() and e.cycle:
@@ -128,6 +135,7 @@ class MultiBackend(Backend):
                 e.prompted = True  # FluxRT pre-encodes its own cycle
 
     def is_ready(self) -> bool:
+        self._pause_ready_engines()
         self._send_initial_prompts()
         return self.engines[self.active].backend.is_ready()
 
@@ -166,7 +174,8 @@ class MultiBackend(Backend):
 
     # -- frames ----------------------------------------------------------------
     def push_input(self, bgr: np.ndarray) -> None:
-        feed = [self.active] + ([self.prev] if self.prev else [])
+        # active + fading-out engine, plus engines still loading (their first frame comes from real input)
+        feed = [self.active] + [n for n in [self.prev, *self._pause_when_ready] if n and n != self.active]
         for name in feed:
             e = self.engines[name]
             e.backend.push_input(np.ascontiguousarray(_fit(bgr, e.backend.resolution)))
@@ -178,6 +187,7 @@ class MultiBackend(Backend):
         return e.last_out
 
     def current_output_frame(self) -> np.ndarray | None:
+        self._pause_ready_engines()
         self._send_initial_prompts()
         alpha = self._fade_alpha()
         cur = self._out(self.engines[self.active])
@@ -205,6 +215,7 @@ class MultiBackend(Backend):
         self.engines[self.active].backend.set_param(name, value)
 
     def stats(self) -> dict:
+        self._pause_ready_engines()  # /api/state polls this even with no viewer connected
         st = dict(self.engines[self.active].backend.stats())
         st["active_engine"] = self.active
         st["fading_from"] = self.prev

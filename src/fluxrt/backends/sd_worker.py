@@ -1007,12 +1007,15 @@ class SDWorker(WorkerBase):
         if self.cn_async:
             threading.Thread(target=self._async_loop, daemon=True).start()
         # Prime every control image once so enabling a net later never hits an empty slot.
+        # inference_mode like process(): preprocessors may return inference tensors that _run_pre
+        # clamps in place (at 640x384 depth comes back at full size, so nothing copies it first)
         x = torch.full((1, 3, self.height, self.width), 0.5, device="cuda", dtype=torch.float16)
-        for i in range(len(cn.controlnets)):
-            try:
-                self._set_control_image(i, self._run_pre(i, x))
-            except Exception as e:  # noqa: BLE001
-                self.log(f"controlnet {self.cn_names[i]}: priming failed: {e}")
+        with torch.inference_mode():
+            for i in range(len(cn.controlnets)):
+                try:
+                    self._set_control_image(i, self._run_pre(i, x))
+                except Exception as e:  # noqa: BLE001
+                    self.log(f"controlnet {self.cn_names[i]}: priming failed: {e}")
         self.cn_timing_ms: dict[str, float] = {}
         self.log("controlnets: " + ", ".join(f"{m['name']}={m['runtime']}" for m in self.cn_meta))
 
