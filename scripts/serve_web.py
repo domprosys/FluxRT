@@ -47,7 +47,8 @@ from aiortc import (
 from aiortc.mediastreams import MediaStreamError
 from av import VideoFrame
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import Request
+from fastapi.responses import FileResponse, PlainTextResponse
 
 from fluxrt.backends.base import Backend
 from fluxrt.utils import crop_maximal_rectangle
@@ -413,6 +414,25 @@ def build_app(server: Server) -> FastAPI:
             await server.close()
 
     app = FastAPI(title="Real-time style transfer", lifespan=lifespan)
+
+    # Optional shared-secret gate (ACCESS_TOKEN env). Open the page once as /?token=...;
+    # the token is then kept in a cookie, so the page's own API calls pass automatically.
+    token = os.environ.get("ACCESS_TOKEN", "").strip()
+    if token:
+        import hmac
+
+        @app.middleware("http")
+        async def require_token(request: Request, call_next):
+            given = request.query_params.get("token") or request.cookies.get("fluxrt_token") \
+                or request.headers.get("x-access-token") or ""
+            if not hmac.compare_digest(given, token):
+                return PlainTextResponse("Access token required: open this page as /?token=<token>", status_code=401)
+            response = await call_next(request)
+            if request.query_params.get("token"):
+                response.set_cookie("fluxrt_token", token, httponly=True, secure=True, samesite="lax", max_age=7 * 86400)
+            return response
+
+        log.info("access token required for all requests")
 
     @app.get("/")
     async def index():
