@@ -87,7 +87,10 @@ class FluxRTBackend(Backend):
         self.sp.set_prompt_index(idx)  # pre-encoded, instant
 
     def set_param(self, name: str, value) -> None:
-        self.sp.set_gen_param(name, value)
+        if name == "lip_transfer":          # LivePortrait expression/lip transfer on/off
+            self.sp.set_lip_transfer(bool(value))
+        else:
+            self.sp.set_gen_param(name, value)
 
     def stats(self) -> dict:
         proc = self.sp.get_last_processing_time()

@@ -68,6 +68,10 @@ WORKER_SCRIPTS = {
 def build_backend(config_path: str, cfg: dict, force_int8: bool = False) -> Backend:
     kind = cfg.get("backend", "fluxrt")
     res = cfg["resolution"]
+    if kind == "multi":
+        from fluxrt.backends.multi import MultiBackend
+
+        return MultiBackend(cfg, config_path, lambda path, sub: build_backend(path, sub))
     if kind == "fluxrt":
         from fluxrt.backends.base import FluxRTBackend
 
@@ -103,7 +107,7 @@ def build_backend(config_path: str, cfg: dict, force_int8: bool = False) -> Back
             env=env,
             cwd=cwd,
         )
-    raise ValueError(f"unknown backend '{kind}' (known: fluxrt, {', '.join(WORKER_SCRIPTS)})")
+    raise ValueError(f"unknown backend '{kind}' (known: fluxrt, multi, {', '.join(WORKER_SCRIPTS)})")
 
 
 # ── ICE servers ─────────────────────────────────────────────────────────────
@@ -204,10 +208,13 @@ class Server:
         self.res = {"height": self.backend.resolution[0], "width": self.backend.resolution[1]}
         self.out_res = {"height": self.backend.out_resolution[0], "width": self.backend.out_resolution[1]}
 
+        self.multi = self.backend.name == "multi"
         self.cycle: list[str] = self.cfg.get("prompt_cycle") or []
         self.prompt_index = 0
         self.custom_prompt: str | None = None
         self.cycle_interval = float(self.cfg.get("prompt_cycle_interval_s", 0) or 0)
+        if self.multi:
+            self._load_engine_prompt_state()
         self.cycle_enabled = len(self.cycle) > 1 and self.cycle_interval > 0
         self._cycle_deadline = time.monotonic() + self.cycle_interval
         self._initial_prompt_sent = False
@@ -281,6 +288,28 @@ class Server:
         return (len(t) - 1) / max(t[-1] - t[0], 1e-6)
 
     # -- prompts -------------------------------------------------------------
+    def _load_engine_prompt_state(self):
+        e = self.backend.engines[self.backend.active]
+        self.cycle = e.cycle
+        self.prompt_index = e.prompt_index
+        self.custom_prompt = e.custom_prompt
+        if e.cycle_interval:
+            self.cycle_interval = e.cycle_interval
+
+    def switch_engine(self, name: str):
+        if not self.multi:
+            raise HTTPException(400, "not running a multi-engine config")
+        try:
+            self.backend.switch(name)
+        except KeyError as e:
+            raise HTTPException(404, str(e))
+        except RuntimeError as e:
+            raise HTTPException(409, str(e))
+        was_enabled = self.cycle_enabled
+        self._load_engine_prompt_state()
+        self.cycle_enabled = was_enabled and len(self.cycle) > 1 and self.cycle_interval > 0
+        self._cycle_deadline = time.monotonic() + self.cycle_interval
+
     def apply_index(self, idx: int):
         if not self.cycle:
             return
@@ -302,7 +331,7 @@ class Server:
             if not self._initial_prompt_sent:
                 # Worker backends start with no prompt; FluxRT pre-encodes its own.
                 self._initial_prompt_sent = True
-                if self.backend.name != "fluxrt":
+                if self.backend.name not in ("fluxrt", "multi"):  # multi sends per-engine prompts itself
                     text = self.cycle[0] if self.cycle else self.cfg.get("default_prompt", "")
                     if text:
                         self.backend.set_prompt_index(0, text)
@@ -484,6 +513,11 @@ def build_app(server: Server) -> FastAPI:
     async def smoothing(body: dict):
         server.alpha = min(1.0, max(0.05, float(body["alpha"])))
         server._ema = None
+        return server.state()
+
+    @app.post("/api/engine")
+    async def engine(body: dict):
+        server.switch_engine(str(body["name"]))
         return server.state()
 
     @app.post("/api/gen")

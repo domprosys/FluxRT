@@ -31,6 +31,7 @@ def main():
     ap.add_argument("--config", required=True)
     ap.add_argument("--device", type=int, default=0, help="-1 = synthetic")
     ap.add_argument("--video", default=None, help="video file to loop as input (overrides --device)")
+    ap.add_argument("--static", action="store_true", help="feed only the video's first frame: any output change is flicker")
     ap.add_argument("--seconds", type=float, default=20)
     ap.add_argument("--fps", type=float, default=25)
     ap.add_argument("--warmup", type=float, default=0, help="seconds excluded from benchmark stats")
@@ -67,12 +68,17 @@ def main():
     n = 0; last_stat = time.time(); t_start = time.time(); last_out = None; frame = None
     gen_samples, gpu_samples = [], []
     out_changes = 0; last_sig = None; bench_t0 = None
+    diffs = []; prev_small = None; static_frame = None
     pending_samples = {}
     while time.time() - t_start < a.seconds:
-        if video is not None:
+        if video is not None and static_frame is not None:
+            frame = static_frame
+        elif video is not None:
             ok, frame = video.read()
             if not ok:
                 video.set(cv2.CAP_PROP_POS_FRAMES, 0); ok, frame = video.read()
+            if a.static:
+                static_frame = frame
         else:
             ok, frame = (cap.read() if cap is not None else (False, None))
             if not ok:
@@ -96,6 +102,10 @@ def main():
                     bench_t0 = time.time()
                 if last_sig is not None and sig != last_sig:
                     out_changes += 1
+                    small = cv2.cvtColor(cv2.resize(out, (160, 90)), cv2.COLOR_BGR2GRAY).astype(np.float32)
+                    if prev_small is not None:
+                        diffs.append(float(np.abs(small - prev_small).mean()))
+                    prev_small = small
             last_sig = sig
             if n in pending_samples:
                 cv2.imwrite(str(out_dir / f"out_{pending_samples.pop(n):04d}.png"), out)
@@ -126,6 +136,10 @@ def main():
             "out_fps": round(out_changes / bench_secs, 1) if bench_secs else None,
             "gpu_mb": max(gpu_samples) if gpu_samples else stats.get("gpu_reserved_mb"),
             "samples": len(gen_samples), "bench_s": round(bench_secs, 1),
+            # mean abs change between consecutive distinct output frames (0-255 scale, 160x90 gray);
+            # with --static input this is pure flicker, with moving input it is motion + flicker
+            "temporal_diff": round(sum(diffs) / len(diffs), 2) if diffs else (0.0 if last_out is not None else None),
+            "static_input": bool(a.static),
             "interpolation_exp": stats.get("interpolation_exp"),
             "stats_last": {k: v for k, v in stats.items() if k in ("proc_time_s", "model", "warmup_fps", "chunk_size", "native_fps", "vae_type")},
         }

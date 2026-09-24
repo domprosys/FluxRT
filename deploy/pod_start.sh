@@ -70,14 +70,10 @@ log "network check: $NET_LINE"
 # ── decide what to install from the config's backend ─────────────────────────
 CFG_FILE=$REPO/configs/$CFG.json
 [ -f "$CFG_FILE" ] || { log "ERROR: $CFG_FILE not found"; exit 1; }
-read -r BACKEND INT8 < <(python3 -c "import json;c=json.load(open('$CFG_FILE'));print(c.get('backend','fluxrt'), int(bool(c.get('enable_int8_quantization', True))))")
-export SKIP_SD=1 SKIP_SDV2=1 SKIP_FLUXRT_WEIGHTS=1 WITH_BF16=0
-case "$BACKEND" in
-  fluxrt) export SKIP_FLUXRT_WEIGHTS=0; [ "$INT8" = 0 ] && export WITH_BF16=1 ;;
-  sd)     export SKIP_SD=0 ;;
-  sdv2)   export SKIP_SDV2=0 ;;
-esac
-log "backend=$BACKEND  SKIP_SD=$SKIP_SD SKIP_SDV2=$SKIP_SDV2 SKIP_FLUXRT_WEIGHTS=$SKIP_FLUXRT_WEIGHTS WITH_BF16=$WITH_BF16"
+eval "$(python3 "$REPO/deploy/config_needs.py" "$CFG_FILE")" || { log "ERROR: cannot read $CFG_FILE"; exit 1; }
+if [ "${ENABLE_TRT:-0}" = 1 ]; then export WITH_TRT=1 SD_ACCELERATION=tensorrt; fi
+BACKEND=$(python3 -c "import json;print(json.load(open('$CFG_FILE')).get('backend','fluxrt'))")
+log "backend=$BACKEND SKIP_SD=$SKIP_SD SKIP_SDV2=$SKIP_SDV2 SKIP_FLUXRT_WEIGHTS=$SKIP_FLUXRT_WEIGHTS WITH_BF16=$WITH_BF16 WITH_TRT=${WITH_TRT:-0} WITH_FACEID=$WITH_FACEID WITH_LIVEPORTRAIT=$WITH_LIVEPORTRAIT extra_models=[$EXTRA_HF_MODELS]"
 
 if ! bash "$REPO/deploy/runpod_setup.sh" > "$LOGS/setup.log" 2>&1; then
   log "SETUP FAILED after $(( $(date +%s) - T0 ))s — see $LOGS/setup.log (progress page stays up showing the error)"

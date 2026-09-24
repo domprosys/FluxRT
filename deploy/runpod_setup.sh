@@ -170,7 +170,8 @@ fi
 fi  # SKIP_FLUXRT_WEIGHTS
 
 # ── 4. SD / ControlNet models (HF cache on the volume) ──────────────────────
-if [ "$SKIP_SD" != 1 ] && [ ! -d "$HF_HOME/hub/models--lllyasviel--control_v11p_sd15_openpose" ]; then
+# hard-coded SD1.5 set only when the configs do not declare their own hf_models
+if [ "$SKIP_SD" != 1 ] && [ -z "${EXTRA_HF_MODELS:-}" ] && [ ! -d "$HF_HOME/hub/models--lllyasviel--control_v11p_sd15_openpose" ]; then
   [ "$MODE" = "--check" ] && { echo "MISSING: SD models"; exit 1; }
   log "downloading SD models (~13 GB)"
   HF=$VENVS/fluxrt/bin/hf
@@ -178,6 +179,21 @@ if [ "$SKIP_SD" != 1 ] && [ ! -d "$HF_HOME/hub/models--lllyasviel--control_v11p_
            lllyasviel/control_v11f1p_sd15_depth lllyasviel/control_v11p_sd15_canny lllyasviel/control_v11f1e_sd15_tile \
            lllyasviel/control_v11p_sd15_softedge lllyasviel/control_v11p_sd15_openpose; do
     retry $HF download "$m" >/dev/null && log "  $m" || { echo "MISSING after download: $m"; exit 1; }
+  done
+fi
+
+# ── 4a. extra models listed in the configs' "hf_models" (EXTRA_HF_MODELS, from config_needs.py) ──
+if [ -n "${EXTRA_HF_MODELS:-}" ] && [ "$MODE" != "--check" ]; then
+  HF=$VENVS/fluxrt/bin/hf
+  for spec in $EXTRA_HF_MODELS; do
+    repo=${spec%%::*}
+    if [ "$spec" != "$repo" ]; then
+      IFS=',' read -r -a globs <<< "${spec#*::}"
+      for g in "${globs[@]}"; do retry $HF download "$repo" --include "$g" >/dev/null || { echo "MISSING after download: $repo ($g)"; exit 1; }; done
+    else
+      retry $HF download "$repo" >/dev/null || { echo "MISSING after download: $repo"; exit 1; }
+    fi
+    log "  hf model: $spec"
   done
 fi
 

@@ -38,6 +38,7 @@
 
 <div id="bar">
   <div id="msg"></div>
+  <div id="engines" style="display:none; width:100%; gap:6px; flex-wrap:wrap; align-items:center"></div>
   <div id="chips"></div>
   <div id="cnets" style="display:none; width:100%; gap:10px; flex-wrap:wrap; align-items:center"></div>
   <select id="cam" title="camera"></select>
@@ -140,9 +141,32 @@ async function post(url, body) {
   else say(url + ' → ' + r.status);
 }
 
+function renderEngines(s) {
+  const box = $('engines');
+  if (!Array.isArray(s.engines) || !s.engines.length) { box.style.display = 'none'; return; }
+  box.style.display = 'flex';
+  const key = s.engines.map(e => e.name).join(',');
+  if (box.dataset.key !== key) {
+    box.dataset.key = key;
+    box.innerHTML = '<span style="color:var(--mut);font-size:12px">engine</span>' +
+      s.engines.map(e => `<button data-engine="${e.name}" title="${e.config} ${e.resolution}">${e.name}</button>`).join('');
+    box.querySelectorAll('button').forEach(b => b.onclick = () => post('/api/engine', { name: b.dataset.engine }));
+  }
+  s.engines.forEach(e => {
+    const b = box.querySelector(`[data-engine="${e.name}"]`);
+    if (!b) return;
+    b.classList.toggle('on', e.name === s.active_engine);
+    b.disabled = !e.ready;
+    b.textContent = e.name + (e.ready ? '' : ' (loading)') + (e.name === s.fading_from ? ' ↘' : '');
+  });
+}
+
 function render(s) {
   state = s;
-  if ($('chips').children.length !== s.cycle.length) {
+  renderEngines(s);
+  const cycleKey = JSON.stringify(s.cycle);
+  if ($('chips').dataset.key !== cycleKey) {
+    $('chips').dataset.key = cycleKey;
     $('chips').innerHTML = s.cycle.map((p, i) => `<button data-i="${i}" title="${p.replace(/"/g, '&quot;')}">${i + 1}. ${p.split(':')[0].replace(/^Turn everyone in the frame into /i, '')}</button>`).join('');
     $('chips').querySelectorAll('button').forEach(b => b.onclick = () => post('/api/prompt_index', { index: +b.dataset.i }));
   }
@@ -154,12 +178,14 @@ function render(s) {
   renderCnets(s.controlnets);
   if ('interpolation_exp' in s && document.activeElement !== $('rife')) $('rife').value = String(s.interpolation_exp);
   const conn = pc ? pc.connectionState : 'idle';
+  const name = s.active_engine ? `${s.active_engine}` : s.backend;
   hud(
-    (s.alive === false ? `${s.backend}: backend DIED` : s.ready ? `${s.backend} ready` : `loading ${s.backend}… ${Math.round(s.uptime_s)}s`) +
+    (s.alive === false ? `${name}: backend DIED` : s.ready ? `${name} ready` : `loading ${name}… ${Math.round(s.uptime_s)}s`) +
     `\nwebrtc: ${conn}${role ? ' (' + role + ')' : ''}` +
     `\nin ${s.input_fps} fps · gen ${s.base_fps} fps (${Math.round(s.proc_time_s * 1000)} ms) · out ${s.out_fps} fps` +
     ('interpolation_exp' in s ? ` · rife ${s.interpolation_exp ? (2 ** s.interpolation_exp) + 'x' : 'off'}` : '') +
     `\nstage ${s.stage_busy ? 'busy' : 'free'} · viewers ${s.viewers} · gpu ${s.gpu_reserved_mb} MB` +
+    (s.gpu_reserved_mb_total ? ` (all engines ${s.gpu_reserved_mb_total} MB)` : '') +
     (s.cycle_enabled ? `\nnext prompt in ${s.cycle_remaining_s}s` : '') +
     (s.custom_prompt ? `\ncustom: ${s.custom_prompt.slice(0, 60)}…` : '') +
     (s.last_error ? `\nlast error: ${String(s.last_error).split('\n').slice(-1)[0].slice(0, 90)}` : '')
