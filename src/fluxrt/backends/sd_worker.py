@@ -228,9 +228,10 @@ def _patch_variant_loading(variant: str, log) -> None:
 
 
 def _patch_unet_engine_path(suffix: str) -> None:
-    """Append `suffix` to the UNet engine dir name. The fork's name has no resolution / cache range /
-    input-set, but cached-attention engines are resolution-specific and our SDXL engines have extra
-    inputs, so those must not collide with (or be mistaken for) plain engines."""
+    """Append `suffix` to the UNet engine dir name. The fork's name has no ControlNet flag / resolution /
+    cache range / input-set, but ControlNet engines have control inputs, cached-attention engines are
+    resolution-specific and our SDXL engines have extra inputs, so those must not collide with (or be
+    mistaken for) plain engines."""
     from streamdiffusion.acceleration.tensorrt.engine_manager import EngineManager, EngineType
 
     if not hasattr(EngineManager, "_fluxrt_get_engine_path"):
@@ -588,6 +589,8 @@ class SDWorker(WorkerBase):
             engine_dir = resolve_engine_dir(w, os.environ, f"sm{cc[0]}{cc[1]}-trt{tensorrt.__version__}")
             os.makedirs(engine_dir, exist_ok=True)
             suffix = ""
+            if self.use_controlnet:  # control inputs exist only if the engine was built with ControlNet on,
+                suffix += "--cn"     # and a plain engine silently drops the residuals (same fork dir name)
             if self.cached:  # the K/V cache inputs have the build resolution baked in
                 suffix += f"--kvo{self.width}x{self.height}-f{self.cached['min']}-{self.cached['max']}"
             if self.is_sdxl and w.get("sdxl_trt_added_cond", True):
