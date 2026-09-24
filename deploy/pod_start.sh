@@ -24,7 +24,17 @@ log "backend config: $CFG"
 # ── progress page on :8000 until the real server takes over ───────────────────
 cat > /root/status_server.py <<'PY'
 import http.server, html, os, time
-LOG = "/workspace/logs/setup.log"; T0 = float(os.environ.get("T0", time.time())); CFG = os.environ.get("CFG", "?")
+LOG = "/workspace/logs/setup.log"; NET = "/workspace/logs/netcheck.txt"
+T0 = float(os.environ.get("T0", time.time())); CFG = os.environ.get("CFG", "?")
+def netcheck():
+    try: lines = open(NET).read().split("\n")
+    except OSError: return "<p>Checking this host's download speed...</p>"
+    info = html.escape(lines[0]) if lines else ""
+    if "SLOW" in (lines[0] if lines else ""):
+        return ("<div style='background:#5a1d1d;border:1px solid #c44;padding:10px;margin:8px 0'>"
+                "<b>This host's network is slow.</b> Setup may take 30+ minutes. Consider terminating this pod "
+                f"and deploying another one (other host or region).<br><small>{info}</small></div>")
+    return f"<p style='color:#8c8'>Network check OK &mdash; {info}</p>"
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         try: tail = open(LOG, errors="replace").read().splitlines()[-40:]
@@ -32,7 +42,7 @@ class H(http.server.BaseHTTPRequestHandler):
         body = (f"<!doctype html><meta http-equiv=refresh content=5><title>Starting...</title>"
                 f"<body style='background:#111;color:#ddd;font:14px monospace;padding:16px'>"
                 f"<h3>Setting up <b>{html.escape(CFG)}</b> &mdash; {int(time.time()-T0)} s elapsed</h3>"
-                f"<p>This page refreshes every 5 s and turns into the app when setup finishes.</p>"
+                f"<p>This page refreshes every 5 s and turns into the app when setup finishes.</p>{netcheck()}"
                 f"<pre>{html.escape(chr(10).join(tail))}</pre>").encode()
         self.send_response(503 if self.path.startswith("/api") else 200)
         self.send_header("Content-Type", "text/html; charset=utf-8"); self.end_headers(); self.wfile.write(body)
@@ -41,6 +51,18 @@ http.server.ThreadingHTTPServer(("0.0.0.0", 8000), H).serve_forever()
 PY
 T0=$T0 CFG=$CFG setsid python3 /root/status_server.py > "$LOGS/status_server.log" 2>&1 < /dev/null &
 STATUS_PID=$!
+
+# ── network check: large-file download speeds (setup time is dominated by these) ──
+HF_BPS=$(curl -sL -r 0-209715199 -o /dev/null -m 20 -w '%{speed_download}' \
+  https://huggingface.co/Lykon/dreamshaper-8/resolve/main/unet/diffusion_pytorch_model.safetensors 2>/dev/null || echo 0)
+PT_BPS=$(curl -sL -o /dev/null -m 20 -w '%{speed_download}' \
+  https://download.pytorch.org/whl/cu128/torch-2.7.0%2Bcu128-cp311-cp311-manylinux_2_28_x86_64.whl 2>/dev/null || echo 0)
+NET_LINE=$(python3 -c "
+hf, pt = float('${HF_BPS:-0}')/1e6, float('${PT_BPS:-0}')/1e6
+slow = hf < 30 or pt < 15
+print(('SLOW: ' if slow else 'OK: ') + f'Hugging Face {hf:.0f} MB/s, PyTorch index {pt:.0f} MB/s (want >=30 / >=15)')")
+echo "$NET_LINE" > "$LOGS/netcheck.txt"
+log "network check: $NET_LINE"
 
 # ── decide what to install from the config's backend ─────────────────────────
 CFG_FILE=$REPO/configs/$CFG.json
