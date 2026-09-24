@@ -1,0 +1,60 @@
+{
+    "backend": "sdv2",
+    "_notes": [
+        "StreamDiffusionV2 14B (Wan2.1-T2V-14B causal DMD v2v). Weights: SDV2_14B=1 bash deploy/setup_sdv2_env.sh (28.6 GB checkpoint + 14B config.json; UMT5/tokenizer/VAE are shared with the 1.3B). Needs ~45-55 GB VRAM: RTX PRO 6000 / H100 class.",
+        "1 step is upstream's 14B default (run_v2v.sh, demo/start.sh): a 14B DiT call costs ~10x a 1.3B one, so each extra step roughly halves fps. Try steps 2 only if fps allows.",
+        "512x512 = upstream's live-demo size. If it measures below ~12 fps, drop to 448x448 (784 tokens/frame, ~25% less DiT work) before anything else; below 448 the 14B's quality edge fades.",
+        "UMT5 on the GPU (auto picks it on a 96 GB card): prompt changes encode in ~0.1 s instead of seconds on CPU."
+    ],
+    "python": "../StreamDiffusionV2/.venv/bin/python",
+    "worker_cwd": "../StreamDiffusionV2",
+    "resolution": {
+        "height": 512,
+        "width": 512
+    },
+    "default_prompt": "A weathered cyborg with brushed chrome skin, visible hydraulic neck joints and a single glowing blue optic eye looks straight into the camera, head and shoulders in frame, standing in a vast neon-lit data center with rows of blinking server racks behind, cool blue rim light and soft haze, cinematic sci-fi film still, ultra detailed",
+    "prompt_cycle": [
+        "A weathered cyborg with brushed chrome skin, visible hydraulic neck joints and a single glowing blue optic eye looks straight into the camera, head and shoulders in frame, standing in a vast neon-lit data center with rows of blinking server racks behind, cool blue rim light and soft haze, cinematic sci-fi film still, ultra detailed",
+        "An ancient stone golem whose face is cracked mossy granite with molten orange lava glowing through the fissures faces the camera inside a crumbling temple lit by torches, drifting dust and embers in the air, epic fantasy film still, dramatic warm light",
+        "An anime heroine with large sparkling eyes and windswept spiky hair faces the camera on a city rooftop at night, a giant full moon and glowing skyline behind her, cel-shaded modern anime film style, clean line art, vibrant colors",
+        "A knight in ornate engraved silver plate armor with a deep red cape stands facing the camera in a misty medieval great hall lit by hundreds of candles, Renaissance oil painting style, rich chiaroscuro, visible brush texture",
+        "A pale zombie with rotting skin, cracked lips and sunken glowing green eyes faces the camera on a foggy abandoned city street at night, flickering street lamp, green moonlight, 1970s horror movie still, film grain",
+        "A Pixar-style 3D animated character with soft rounded features, big friendly eyes and rosy cheeks faces the camera in a cozy colorful toy workshop full of wooden toys, warm golden lighting, high quality 3D animation render",
+        "A Viking warrior with a long braided beard, a heavy fur cloak and blue war paint across the eyes faces the camera on a snowy fjord at dawn, mountains and a longship behind, cold blue light with warm sunrise glow, epic historical film still",
+        "A delicate watercolor portrait of a person facing the viewer in a sunlit cottage flower garden, soft pastel washes, visible paper texture and loose brush strokes, dreamy impressionist style"
+    ],
+    "prompt_cycle_interval_s": 30,
+    "input_smoothing_alpha": 1.0,
+    "worker_env": {
+        "TOKENIZERS_PARALLELISM": "false",
+        "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"
+    },
+    "worker": {
+        "model_size": "14b",
+        "base_dir": "wan_models/Wan2.1-T2V-14B",
+        "checkpoint": "ckpts/wan_causal_dmd_v2v_14b/model.pt",
+        "t5_path": "wan_models/Wan2.1-T2V-1.3B/models_t5_umt5-xxl-enc-bf16.pth",
+        "tokenizer_path": "wan_models/Wan2.1-T2V-1.3B/google/umt5-xxl",
+        "vae_path": "wan_models/Wan2.1-T2V-1.3B/Wan2.1_VAE.pth",
+        "lightvae_path": "wan_models/Autoencoders/lightvaew2_1.pth",
+        "taehv_path": "ckpts/taew2_1.pth",
+        "vae_type": "lightvae",
+        "steps": 1,
+        "seed": 42,
+        "noise_scale": 0.8,
+        "adaptive_noise": true,
+        "normalize_latents": false,
+        "prompt_reset": "hard",
+        "text_encoder_device": "auto",
+        "text_encoder_fp32": false,
+        "num_kv_cache": 6,
+        "num_sink_tokens": 3,
+        "adapt_sink_threshold": 0.2,
+        "t_refresh": 50,
+        "fast_sdpa": true,
+        "fp8": false,
+        "output_fps": 0,
+        "reset_after_gap_s": 2.0,
+        "cudnn_benchmark": true
+    }
+}

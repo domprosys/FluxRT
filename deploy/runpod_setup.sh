@@ -33,7 +33,7 @@ SKIP_SD=${SKIP_SD:-0}   # SKIP_SD=1: FluxRT only (no StreamDiffusion venv/models
 SKIP_SDV2=${SKIP_SDV2:-0}  # SKIP_SDV2=1: no StreamDiffusionV2 venv/models
 SKIP_FLUXRT_WEIGHTS=${SKIP_FLUXRT_WEIGHTS:-0}  # 1: server venv only, no FLUX weights (SD/SDV2-only pods)
 WITH_BF16=${WITH_BF16:-0}  # 1: also fetch the bf16 FLUX transformer + text encoder (web_bf16_config)
-SDV2_REPO=https://github.com/chenfengxu714/StreamDiffusionV2.git; SDV2_REF=bcb894b
+SDV2_14B=${SDV2_14B:-0}  # 1: also fetch the 14B StreamDiffusionV2 checkpoint (28.6 GB)
 SD_DIFFUSERS="diffusers @ git+https://github.com/varshith15/diffusers.git@3e3b72f557e91546894340edabc845e894f00922"
 # snapshots only make sense on a network volume (it outlives the pod)
 if mount | grep -E " $WS " | grep -qiE "mfs|nfs|fuse"; then NETVOL=1; else NETVOL=0; fi
@@ -60,11 +60,6 @@ if [ "$SKIP_SD" != 1 ] && [ ! -d "$SD" ]; then
   [ "$MODE" = "--check" ] && { echo "MISSING: StreamDiffusion clone"; exit 1; }
   log "cloning daydreamlive/StreamDiffusion"
   retry git clone -q --depth 1 https://github.com/daydreamlive/StreamDiffusion.git "$SD"
-fi
-if [ "$SKIP_SDV2" != 1 ] && [ ! -d "$SDV2" ]; then
-  [ "$MODE" = "--check" ] && { echo "MISSING: StreamDiffusionV2 clone"; exit 1; }
-  log "cloning StreamDiffusionV2 @ $SDV2_REF"
-  rm -rf "$SDV2.tmp"; retry git clone -q "$SDV2_REPO" "$SDV2.tmp" && git -C "$SDV2.tmp" checkout -q "$SDV2_REF" && mv "$SDV2.tmp" "$SDV2"
 fi
 
 # ── 2. venvs: restore snapshot from the volume, else build on local disk ─────
@@ -103,26 +98,20 @@ if [ "$SKIP_SD" != 1 ] && [ ! -x $VENVS/sd/bin/python ]; then
   NEW_VENV=1
 fi
 # symlinks so the repo layout (and the configs' ../StreamDiffusion-daydream/.venv) keep working
-if [ "$SKIP_SDV2" != 1 ] && [ -d "$SDV2" ] && [ ! -x $VENVS/sdv2/bin/python ]; then
-  log "building StreamDiffusionV2 venv on local disk"
-  uv venv --python 3.10 $VENVS/sdv2 >/dev/null
-  retry uv pip install --python $VENVS/sdv2/bin/python torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
-  retry uv pip install --python $VENVS/sdv2/bin/python --no-deps -r $LOCKS/sdv2.lock
-  FA_WHL=$(ls $WHEELS/flash_attn-2.7.4*cp310*.whl 2>/dev/null | head -1 || true)
-  FA_WHL=${FA_WHL:-https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.4.post1/flash_attn-2.7.4.post1+cu12torch2.6cxx11abiFALSE-cp310-cp310-linux_x86_64.whl}
-  retry uv pip install --python $VENVS/sdv2/bin/python --no-deps "$FA_WHL"
-  retry uv pip install --python $VENVS/sdv2/bin/python --no-deps -e $SDV2 --config-settings editable_mode=compat
-  NEW_VENV=1
+if [ "$SKIP_SDV2" != 1 ] && [ "$MODE" != "--check" ]; then
+  # upstream StreamDiffusionV2 (Blackwell-capable, torch 2.11 cu128): clone + venv; rebuilds a stale venv
+  s0=$(cat $VENVS/sdv2/.fluxrt-sdv2-stamp 2>/dev/null || true)
+  VENVS=$VENVS WS=$WS REPO=$REPO SDV2=$SDV2 WHEELS=$WHEELS bash $REPO/deploy/setup_sdv2_env.sh --venv || { echo "sdv2 setup failed"; exit 1; }
+  [ "$(cat $VENVS/sdv2/.fluxrt-sdv2-stamp 2>/dev/null)" = "$s0" ] || NEW_VENV=1
 fi
 pairs="$REPO/.venv:$VENVS/fluxrt"; [ "$SKIP_SD" != 1 ] && pairs="$pairs $SD/.venv:$VENVS/sd"
-[ "$SKIP_SDV2" != 1 ] && [ -d "$SDV2" ] && pairs="$pairs $SDV2/.venv:$VENVS/sdv2"
 for pair in $pairs; do
   link=${pair%%:*}; target=${pair##*:}
   if [ -d "$link" ] && [ ! -L "$link" ]; then log "removing old on-volume venv $link"; rm -rf "$link"; fi
   [ -L "$link" ] || ln -s "$target" "$link"
 done
 $VENVS/fluxrt/bin/python -c "import torch, aiortc, fluxrt; print('fluxrt venv ok, torch', torch.__version__, 'cuda', torch.cuda.is_available())"
-{ [ "$SKIP_SDV2" = 1 ] || [ ! -d "$SDV2" ]; } || $VENVS/sdv2/bin/python -c "import torch, flash_attn, causvid; print('sdv2 venv ok, torch', torch.__version__)"
+[ "$SKIP_SDV2" = 1 ] || $VENVS/sdv2/bin/python -c "import torch, models.wan.causal_stream_inference; print('sdv2 venv ok, torch', torch.__version__, 'sm_120' in torch.cuda.get_arch_list())"
 [ "$SKIP_SD" = 1 ] || $VENVS/sd/bin/python -c "import streamdiffusion, torch, mediapipe; print('sd venv ok, torch', torch.__version__)"
 # ── optional add-ons (each script is idempotent; see the script headers) ──────
 export VENVS WS REPO SD SDV2 HF_HOME UV_CACHE_DIR UV_PYTHON_INSTALL_DIR
@@ -197,15 +186,10 @@ if [ -n "${EXTRA_HF_MODELS:-}" ] && [ "$MODE" != "--check" ]; then
   done
 fi
 
-# ── 4b. StreamDiffusionV2 weights (inside the SDV2 clone, where the worker expects them) ──
-if [ "$SKIP_SDV2" != 1 ] && [ -d "$SDV2" ]; then
-  HF=$VENVS/fluxrt/bin/hf
-  [ -f $SDV2/wan_models/Wan2.1-T2V-1.3B/config.json ] || { [ "$MODE" = "--check" ] && { echo "MISSING: Wan2.1"; exit 1; }; log "downloading Wan2.1-T2V-1.3B (~17 GB)"; retry $HF download Wan-AI/Wan2.1-T2V-1.3B --local-dir $SDV2/wan_models/Wan2.1-T2V-1.3B >/dev/null; }
-  [ -f $SDV2/ckpts/wan_causal_dmd_v2v/model.pt ] || { [ "$MODE" = "--check" ] && { echo "MISSING: SDV2 ckpt"; exit 1; }; log "downloading SDV2 checkpoint (~11 GB)"; retry $HF download daydreamlive/StreamDiffusionV2 wan_causal_dmd_v2v/model.pt --local-dir $SDV2/ckpts >/dev/null; }
-  [ -f $SDV2/wan_models/Autoencoders/lightvaew2_1.pth ] || { [ "$MODE" = "--check" ] && { echo "MISSING: lightvae"; exit 1; }; retry $HF download lightx2v/Autoencoders lightvaew2_1.pth --local-dir $SDV2/wan_models/Autoencoders >/dev/null; }
-  for f in wan_models/Wan2.1-T2V-1.3B/config.json ckpts/wan_causal_dmd_v2v/model.pt wan_models/Autoencoders/lightvaew2_1.pth; do
-    [ -f "$SDV2/$f" ] || { echo "MISSING after download: $SDV2/$f"; exit 1; }
-  done
+# ── 4b. StreamDiffusionV2 weights (1.3B always; 14B when SDV2_14B=1), size-checked ──
+if [ "$SKIP_SDV2" != 1 ]; then
+  SDV2_14B=$SDV2_14B VENVS=$VENVS WS=$WS REPO=$REPO SDV2=$SDV2 HF_HOME=$HF_HOME \
+    bash $REPO/deploy/setup_sdv2_env.sh $([ "$MODE" = "--check" ] && echo --check || echo --weights) || { echo "MISSING: StreamDiffusionV2 weights"; exit 1; }
 fi
 
 # ── 5. summary ───────────────────────────────────────────────────────────────

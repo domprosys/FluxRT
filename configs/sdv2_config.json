@@ -1,37 +1,60 @@
 {
     "backend": "sdv2",
+    "_notes": [
+        "StreamDiffusionV2 1.3B (Wan2.1-T2V-1.3B causal DMD v2v), upstream @ 6961a5c, venv + weights: deploy/setup_sdv2_env.sh.",
+        "Wan prompts are scene descriptions (T2V captions), not edit instructions: describe the subject facing the camera + setting + style.",
+        "512x512 (multiple of 16; 1024 tokens/latent frame), 2 steps = upstream's live default; 640x352 is the 16:9 alternative (880 tokens).",
+        "vae_type: lightvae (fast, default) | lightvae_taehv (fastest decode) | taehv (full Wan encoder + TAEHV, upstream --use_taehv) | lightvae_decode | wan (reference, slow).",
+        "text_encoder_device auto = GPU if UMT5 (11.4 GB) + 8 GB margin fit after the model loads, else CPU (prompt encoding a few s on CPU, cached on disk)."
+    ],
     "python": "../StreamDiffusionV2/.venv/bin/python",
     "worker_cwd": "../StreamDiffusionV2",
     "resolution": {
         "height": 512,
         "width": 512
     },
-    "default_prompt": "a cyborg with polished chrome skin, exposed mechanical joints and a glowing blue optic eye, standing in a neon-lit futuristic server hall, cool blue rim lighting, cinematic sci-fi, highly detailed",
+    "default_prompt": "A cyborg with polished chrome skin, exposed mechanical joints and one glowing blue optic eye, facing the camera in a head-and-shoulders shot, standing in a neon-lit futuristic server hall, cool blue rim lighting, cinematic sci-fi film still, highly detailed",
     "prompt_cycle": [
-        "a cyborg with polished chrome skin, exposed mechanical joints and a glowing blue optic eye, standing in a neon-lit futuristic server hall, cool blue rim lighting, cinematic sci-fi, highly detailed",
-        "an ancient stone golem made of cracked mossy granite with molten lava glowing through the fissures, inside a crumbling torch-lit temple, drifting dust and embers, fantasy concept art",
-        "an anime character with big expressive eyes and spiky hair under a giant glowing full moon on a rooftop at night, cel-shaded, modern anime film style, vibrant colors",
-        "a knight in ornate silver plate armor with a red cape in a misty medieval castle hall, candlelight, oil painting style, dramatic chiaroscuro",
-        "a zombie with pale rotting skin and sunken glowing eyes on a foggy abandoned city street at night, horror movie, green moonlight, cinematic",
-        "a Pixar-style 3D animated cartoon character with soft rounded features in a colorful toy workshop, warm lighting, cute, high quality 3D render",
-        "a Viking warrior with a braided beard, fur cloak and war paint on a snowy fjord at dawn, cold blue light, epic film still",
-        "a watercolor painting of a person in a sunlit flower garden, soft pastel colors, loose brush strokes, dreamy impressionist style"
+        "A cyborg with polished chrome skin, exposed mechanical joints and one glowing blue optic eye, facing the camera in a head-and-shoulders shot, standing in a neon-lit futuristic server hall, cool blue rim lighting, cinematic sci-fi film still, highly detailed",
+        "An ancient stone golem with a face of cracked mossy granite and molten lava glowing through the fissures, facing the camera inside a crumbling torch-lit temple, drifting dust and embers, epic fantasy film still",
+        "An anime character with big expressive eyes and spiky hair facing the camera on a rooftop at night under a giant glowing full moon, city lights below, cel-shaded, modern anime film style, vibrant colors",
+        "A knight in ornate silver plate armor and a red cape facing the camera in a misty medieval castle hall lit by candles, oil painting style, dramatic chiaroscuro",
+        "A zombie with pale rotting skin and sunken glowing eyes facing the camera on a foggy abandoned city street at night, green moonlight, horror movie still",
+        "A Pixar-style 3D animated cartoon character with soft rounded features and big eyes facing the camera in a colorful toy workshop, warm lighting, cute, high quality 3D render",
+        "A Viking warrior with a braided beard, fur cloak and blue war paint facing the camera on a snowy fjord at dawn, cold blue light, epic film still",
+        "A watercolor painting of a person facing the viewer in a sunlit flower garden, soft pastel colors, loose brush strokes, dreamy impressionist style"
     ],
     "prompt_cycle_interval_s": 30,
     "input_smoothing_alpha": 1.0,
+    "worker_env": {
+        "TOKENIZERS_PARALLELISM": "false"
+    },
     "worker": {
-        "config_path": "configs/wan_causal_dmd_v2v.yaml",
+        "model_size": "1.3b",
+        "base_dir": "wan_models/Wan2.1-T2V-1.3B",
         "checkpoint": "ckpts/wan_causal_dmd_v2v/model.pt",
+        "t5_path": "wan_models/Wan2.1-T2V-1.3B/models_t5_umt5-xxl-enc-bf16.pth",
+        "tokenizer_path": "wan_models/Wan2.1-T2V-1.3B/google/umt5-xxl",
+        "vae_path": "wan_models/Wan2.1-T2V-1.3B/Wan2.1_VAE.pth",
+        "lightvae_path": "wan_models/Autoencoders/lightvaew2_1.pth",
+        "taehv_path": "ckpts/taew2_1.pth",
+        "vae_type": "lightvae",
         "steps": 2,
         "seed": 42,
         "noise_scale": 0.8,
         "adaptive_noise": true,
+        "normalize_latents": false,
         "prompt_reset": "hard",
-        "text_encoder_device": "cpu",
+        "text_encoder_device": "auto",
         "text_encoder_fp32": false,
-        "vae_type": "lightvae",
+        "num_kv_cache": 6,
+        "num_sink_tokens": 3,
+        "adapt_sink_threshold": 0.2,
+        "t_refresh": 50,
+        "fast_sdpa": true,
         "fp8": false,
         "output_fps": 0,
+        "reset_after_gap_s": 2.0,
         "cudnn_benchmark": true
     }
 }

@@ -45,6 +45,8 @@ def needs(path: Path) -> dict:
         "WITH_BF16": "1" if any(not c.get("enable_int8_quantization", True) for c in flux) else "0",
         "WITH_LIVEPORTRAIT": "1" if any((c.get("lip_transfer") or {}).get("enable") for c in flux) else "0",
         "WITH_FACEID": "1" if any((c.get("worker") or {}).get("use_ipadapter") for c in sd) else "0",
+        "SDV2_14B": "1" if any((c.get("worker") or {}).get("model_size", "").lower() == "14b"
+                               for c in cfgs if c.get("backend") == "sdv2") else "0",
         "EXTRA_HF_MODELS": " ".join(models),
     }
 

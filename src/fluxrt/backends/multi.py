@@ -58,6 +58,11 @@ class _Engine:
     def is_fluxrt(self) -> bool:
         return self.backend.name == "fluxrt"
 
+    @property
+    def pausable(self) -> bool:
+        # engines whose loop runs without new input and understand set_param("paused")
+        return self.backend.name in ("fluxrt", "sdv2")
+
 
 class MultiBackend(Backend):
     name = "multi"
@@ -104,12 +109,12 @@ class MultiBackend(Backend):
                 log.warning("stopping %s: %s", e.name, exc)
 
     def _pause(self, e: _Engine) -> None:
-        if e.is_fluxrt:
+        if e.pausable:
             e.backend.set_param("paused", True)
         self._paused.add(e.name)
 
     def _resume(self, e: _Engine) -> None:
-        if e.is_fluxrt:
+        if e.pausable:
             e.backend.set_param("paused", False)
         self._paused.discard(e.name)
 
