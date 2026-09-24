@@ -273,9 +273,8 @@ class ModelInferenceSubprocess:
         self.lip_active = False
         lp_cfg = self.config.get("lip_transfer", {})
         if lp_cfg.get("enable", False):
-            self.lip_processor = LivePortraitPostProcessor(
-                models_dir=lp_cfg["models_dir"]
-            )
+            self.lip_processor = LivePortraitPostProcessor.from_config(lp_cfg)
+            self.lip_active = bool(lp_cfg.get("start_active", False))
 
     # ── prompt-embedding disk cache ──────────────────────────────────────────
     # When cache_prompt_embeds is set, the pre-encoded cycle embeddings are

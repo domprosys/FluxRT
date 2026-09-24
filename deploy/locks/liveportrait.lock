@@ -1,0 +1,12 @@
+# Known-good versions of the packages LivePortrait adds to the FluxRT venv (python 3.12, torch 2.11.0+cu128,
+# numpy 2.2.6, opencv-python 4.12.0.88, scipy 1.18.1). Resolved 2026-09-24; import-tested on CPU.
+# Used as constraints by deploy/setup_liveportrait.sh for packages the venv does not already have.
+flatbuffers==25.12.19
+imageio==2.37.4
+lazy-loader==0.6
+ml-dtypes==0.6.0
+onnx==1.21.0
+onnxruntime-gpu==1.26.0
+protobuf==7.36.2
+scikit-image==0.24.0
+tifffile==2026.9.20

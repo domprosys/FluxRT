@@ -1,5 +1,14 @@
+# LivePortrait lip / expression transfer (config "lip_transfer"). On pods deploy/setup_liveportrait.sh
+# installs this into the FluxRT venv with the venv's existing packages as constraints (torch, numpy,
+# opencv are never changed) and deploy/locks/liveportrait.lock pinning the new ones.
+# onnxruntime-gpu 1.26.0 is the LAST PyPI build for CUDA 12 (1.27+ need CUDA 13); FluxRT's torch is cu128.
+# Do not also install the CPU "onnxruntime" package (same module name).
 onnxruntime-gpu==1.26.0
 onnx==1.21.0
-imageio==2.34.2
-scipy==1.13.1
 scikit-image==0.24.0
+scipy>=1.13.1
+imageio>=2.34.2,!=2.35.0
+pyyaml
+rich
+requests
+tqdm
