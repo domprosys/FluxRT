@@ -13,7 +13,7 @@ set -uo pipefail
 WS=/workspace
 REPO=$WS/fluxrt
 LOGS=$WS/logs
-mkdir -p "$LOGS"
+mkdir -p "$LOGS"; rm -f "$LOGS/FAILED"
 CFG=${BACKEND_CONFIG:-sd_controlnet_config}
 CFG=${CFG%.json}
 export HF_HOME=$WS/hf PATH="$HOME/.local/bin:$PATH"
@@ -39,10 +39,13 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         try: tail = open(LOG, errors="replace").read().splitlines()[-40:]
         except OSError: tail = ["(waiting for setup to start)"]
-        body = (f"<!doctype html><meta http-equiv=refresh content=5><title>Starting...</title>"
+        failed = os.path.exists("/workspace/logs/FAILED")
+        banner = ("<div style='background:#5a1d1d;border:1px solid #c44;padding:10px;margin:8px 0'><b>Setup FAILED.</b> "
+                  "The error is at the end of the log below. Terminate this pod (or SSH in: /workspace/logs/).</div>") if failed else ""
+        body = (f"<!doctype html><meta http-equiv=refresh content=5><title>{'FAILED' if failed else 'Starting...'}</title>"
                 f"<body style='background:#111;color:#ddd;font:14px monospace;padding:16px'>"
                 f"<h3>Setting up <b>{html.escape(CFG)}</b> &mdash; {int(time.time()-T0)} s elapsed</h3>"
-                f"<p>This page refreshes every 5 s and turns into the app when setup finishes.</p>{netcheck()}"
+                f"<p>This page refreshes every 5 s and turns into the app when setup finishes.</p>{banner}{netcheck()}"
                 f"<pre>{html.escape(chr(10).join(tail))}</pre>").encode()
         self.send_response(503 if self.path.startswith("/api") else 200)
         self.send_header("Content-Type", "text/html; charset=utf-8"); self.end_headers(); self.wfile.write(body)
@@ -78,6 +81,7 @@ log "backend=$BACKEND  SKIP_SD=$SKIP_SD SKIP_SDV2=$SKIP_SDV2 SKIP_FLUXRT_WEIGHTS
 
 if ! bash "$REPO/deploy/runpod_setup.sh" > "$LOGS/setup.log" 2>&1; then
   log "SETUP FAILED after $(( $(date +%s) - T0 ))s — see $LOGS/setup.log (progress page stays up showing the error)"
+  { echo "setup failed after $(( $(date +%s) - T0 ))s"; tail -n 15 "$LOGS/setup.log"; } > "$LOGS/FAILED"
   exit 1
 fi
 log "setup done in $(( $(date +%s) - T0 ))s; starting server"

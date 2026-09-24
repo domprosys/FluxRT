@@ -17,16 +17,16 @@
 #   bash /workspace/fluxrt/deploy/runpod_setup.sh --snapshot # re-create venvs.tar
 set -euo pipefail
 
-WS=/workspace
+WS=${WS:-/workspace}
 REPO=$WS/fluxrt
 SD=$WS/StreamDiffusion-daydream
 SDV2=$WS/StreamDiffusionV2
 WHEELS=$WS/wheels      # optional wheelhouse (diffusers fork, flash-attn) for hosts with flaky GitHub
 LOCKS=$REPO/deploy/locks
-VENVS=/root/venvs
-export UV_PYTHON_INSTALL_DIR=/root/uvpython
-export HF_HOME=$WS/hf
-export UV_CACHE_DIR=$WS/.uv-cache
+VENVS=${VENVS:-/root/venvs}
+export UV_PYTHON_INSTALL_DIR=${UV_PYTHON_INSTALL_DIR:-/root/uvpython}
+export HF_HOME=${HF_HOME:-$WS/hf}
+export UV_CACHE_DIR=${UV_CACHE_DIR_POD:-/root/.uv-cache}   # local disk: /workspace may be a network fs (slow small files)
 export PATH="$HOME/.local/bin:$PATH"
 MODE=${1:-}
 SKIP_SD=${SKIP_SD:-0}   # SKIP_SD=1: FluxRT only (no StreamDiffusion venv/models)
@@ -89,7 +89,7 @@ if [ "$SKIP_SD" != 1 ] && [ ! -x $VENVS/sd/bin/python ]; then
   log "building StreamDiffusion venv on local disk"
   uv venv --python 3.11 $VENVS/sd >/dev/null
   retry uv pip install --python $VENVS/sd/bin/python torch==2.7.0 torchvision==0.22.0 --index-url https://download.pytorch.org/whl/cu128
-  DIFF_WHL=$(ls $WHEELS/diffusers-*.whl 2>/dev/null | head -1)
+  DIFF_WHL=$(ls $WHEELS/diffusers-*.whl 2>/dev/null | head -1 || true)
   if [ -f $LOCKS/sd.lock ]; then
     DIFF_WHL=${DIFF_WHL:-$SD_DIFFUSERS}
     log "SD venv from lock + local diffusers wheel"
@@ -108,7 +108,7 @@ if [ "$SKIP_SDV2" != 1 ] && [ -d "$SDV2" ] && [ ! -x $VENVS/sdv2/bin/python ]; t
   uv venv --python 3.10 $VENVS/sdv2 >/dev/null
   retry uv pip install --python $VENVS/sdv2/bin/python torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
   retry uv pip install --python $VENVS/sdv2/bin/python --no-deps -r $LOCKS/sdv2.lock
-  FA_WHL=$(ls $WHEELS/flash_attn-2.7.4*cp310*.whl 2>/dev/null | head -1)
+  FA_WHL=$(ls $WHEELS/flash_attn-2.7.4*cp310*.whl 2>/dev/null | head -1 || true)
   FA_WHL=${FA_WHL:-https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.4.post1/flash_attn-2.7.4.post1+cu12torch2.6cxx11abiFALSE-cp310-cp310-linux_x86_64.whl}
   retry uv pip install --python $VENVS/sdv2/bin/python --no-deps "$FA_WHL"
   retry uv pip install --python $VENVS/sdv2/bin/python --no-deps -e $SDV2 --config-settings editable_mode=compat
@@ -124,7 +124,7 @@ done
 $VENVS/fluxrt/bin/python -c "import torch, aiortc, fluxrt; print('fluxrt venv ok, torch', torch.__version__, 'cuda', torch.cuda.is_available())"
 { [ "$SKIP_SDV2" = 1 ] || [ ! -d "$SDV2" ]; } || $VENVS/sdv2/bin/python -c "import torch, flash_attn, causvid; print('sdv2 venv ok, torch', torch.__version__)"
 [ "$SKIP_SD" = 1 ] || $VENVS/sd/bin/python -c "import streamdiffusion, torch, mediapipe; print('sd venv ok, torch', torch.__version__)"
-if [ "$NETVOL" = 1 ] && [ "$SKIP_SD" != 1 ] && [ "$SKIP_SDV2" != 1 ] && { [ "${NEW_VENV:-}" = 1 ] || [ "$MODE" = "--snapshot" ] || [ ! -f $WS/venvs/venvs.tar ]; }; then
+if [ "$MODE" = "--snapshot" ] || { [ -f $WS/venvs/venvs.tar ] && [ "${NEW_VENV:-}" = 1 ] && [ "$SKIP_SD" != 1 ] && [ "$SKIP_SDV2" != 1 ]; }; then
   log "snapshotting venvs + interpreters to $WS/venvs/venvs.tar"
   mkdir -p $WS/venvs
   tar -cf $WS/venvs/venvs.tar.tmp -C / root/venvs root/uvpython && mv $WS/venvs/venvs.tar.tmp $WS/venvs/venvs.tar
