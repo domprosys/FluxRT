@@ -11,17 +11,19 @@ mkdir -p "$OUT"
 TAG=sessA2
 source deploy/bench_lib.sh
 
-# ── cached attention (StreamV2V), moving input only: SD is deterministic on a still frame.
-# cache12 already ran in bench_session_a.sh (its worker started after the fix landed).
-T sdcn_cache4 "$(cfgvar configs/sd_controlnet_config.json cache4 worker.use_cached_attn=true worker.cache_maxframes=4 worker.max_cache_maxframes=16 worker.cache_interval=1)"
-
+# Ordered by priority: the pod's 3 h cap may cut the tail.
 # ── LivePortrait: face box from the webcam frame instead of detecting it in the stylised one ──
 T flux_lp_driving     "$(cfgvar configs/web_bf16_liveportrait_config.json lp_driving 'lip_transfer.source_crop="driving"')"
-T flux_lp_driving_exp "$(cfgvar configs/web_bf16_liveportrait_config.json lp_driving_exp 'lip_transfer.source_crop="driving"' 'lip_transfer.region="exp"')"
 
 # ── all engines resident with TensorRT (the template's ENABLE_TRT=1 path) ──
 export SD_ACCELERATION=tensorrt
 multi_run multi_trt configs/multi_config.json 50 "12:sdxl 15:flux 15:sd"
 unset SD_ACCELERATION
+
+T flux_lp_driving_exp "$(cfgvar configs/web_bf16_liveportrait_config.json lp_driving_exp 'lip_transfer.source_crop="driving"' 'lip_transfer.region="exp"')"
+
+# ── cached attention (StreamV2V), moving input only: SD is deterministic on a still frame.
+# cache12 already ran in bench_session_a.sh (its worker started after the fix landed).
+T sdcn_cache4 "$(cfgvar configs/sd_controlnet_config.json cache4 worker.use_cached_attn=true worker.cache_maxframes=4 worker.max_cache_maxframes=16 worker.cache_interval=1)"
 du -sh /workspace/engines 2>/dev/null > "$OUT/engines_size.txt"
 say "=== done"
