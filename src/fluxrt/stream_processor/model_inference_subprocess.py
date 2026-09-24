@@ -653,7 +653,14 @@ class ModelInferenceSubprocess:
 
                 elif cmd == "set_gen_param":
                     name, value = payload
-                    self._apply_gen_param(name, value)
+                    if name == "paused":
+                        # Multi-engine mode: an idle engine must not keep using the GPU.
+                        was = getattr(self, "paused", False)
+                        self.paused = bool(value)
+                        if was and not self.paused:
+                            self.update_controller.reset_cache()  # frames moved on while paused
+                    else:
+                        self._apply_gen_param(name, value)
 
         except Empty:
             pass
@@ -812,6 +819,9 @@ class ModelInferenceSubprocess:
             # Commands are processed outside the try so a bad live setting can
             # always be undone even if it makes frames error.
             self.update_process_state()
+            if getattr(self, "paused", False):
+                time.sleep(0.02)
+                continue
             try:
                 original_frame = self.input_shared_tensor.to_numpy()
                 original_frame = cv2.cvtColor(original_frame, cv2.COLOR_BGR2RGB)

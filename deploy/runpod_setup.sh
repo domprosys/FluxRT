@@ -124,6 +124,17 @@ done
 $VENVS/fluxrt/bin/python -c "import torch, aiortc, fluxrt; print('fluxrt venv ok, torch', torch.__version__, 'cuda', torch.cuda.is_available())"
 { [ "$SKIP_SDV2" = 1 ] || [ ! -d "$SDV2" ]; } || $VENVS/sdv2/bin/python -c "import torch, flash_attn, causvid; print('sdv2 venv ok, torch', torch.__version__)"
 [ "$SKIP_SD" = 1 ] || $VENVS/sd/bin/python -c "import streamdiffusion, torch, mediapipe; print('sd venv ok, torch', torch.__version__)"
+# ── optional add-ons (each script is idempotent; see the script headers) ──────
+export VENVS WS REPO SD SDV2 HF_HOME UV_CACHE_DIR UV_PYTHON_INSTALL_DIR
+for addon in TRT:setup_trt.sh FACEID:setup_faceid.sh LIVEPORTRAIT:setup_liveportrait.sh; do
+  flag=WITH_${addon%%:*}; script=$REPO/deploy/${addon##*:}
+  if [ "${!flag:-0}" = 1 ]; then
+    [ -f "$script" ] || { echo "MISSING add-on script: $script"; exit 1; }
+    log "add-on ${addon%%:*}: $script"
+    bash "$script" || { echo "add-on ${addon%%:*} failed"; exit 1; }
+  fi
+done
+
 if [ "$MODE" = "--snapshot" ] || { [ -f $WS/venvs/venvs.tar ] && [ "${NEW_VENV:-}" = 1 ] && [ "$SKIP_SD" != 1 ] && [ "$SKIP_SDV2" != 1 ]; }; then
   log "snapshotting venvs + interpreters to $WS/venvs/venvs.tar"
   mkdir -p $WS/venvs
