@@ -2,21 +2,50 @@
   "_comment": "GPU acquisition preferences for deploy/runpod_acquire.py. Only regions holding a prepared network volume are listed. Order = priority. latency_ms is the measured round trip from the studio (Romania, RDS), 2026-09-23.",
   "order": "region",
   "regions": [
-    {"dc": "EU-RO-1", "volume": "w73oznqch4", "latency_ms": 11},
-    {"dc": "EUR-IS-1", "volume": "ji13x898lc", "latency_ms": 72}
+    {
+      "dc": "EU-RO-1",
+      "volume": "w73oznqch4",
+      "latency_ms": 11
+    },
+    {
+      "dc": "EUR-IS-1",
+      "volume": "ji13x898lc",
+      "latency_ms": 72
+    }
   ],
   "gpus": [
-    {"id": "NVIDIA RTX PRO 6000 Blackwell Server Edition", "short": "PRO6000-S", "max_price": 2.30},
-    {"id": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition", "short": "PRO6000-W", "max_price": 2.40},
-    {"id": "NVIDIA GeForce RTX 4090", "short": "4090", "max_price": 0.90},
-    {"id": "NVIDIA A100-SXM4-80GB", "short": "A100-SXM", "max_price": 1.80}
+    {
+      "id": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "short": "PRO6000-S",
+      "max_price": 2.3
+    },
+    {
+      "id": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "short": "PRO6000-W",
+      "max_price": 2.4
+    },
+    {
+      "id": "NVIDIA GeForce RTX 4090",
+      "short": "4090",
+      "max_price": 0.9
+    },
+    {
+      "id": "NVIDIA A100-SXM4-80GB",
+      "short": "A100-SXM",
+      "max_price": 1.8
+    }
   ],
   "pod": {
     "image": "runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04",
     "cloud": "SECURE",
     "container_disk_gb": 40,
-    "ports": ["8000/http", "22/tcp"],
-    "env": {"HF_HOME": "/workspace/hf"}
+    "ports": [
+      "8000/http",
+      "22/tcp"
+    ],
+    "env": {
+      "HF_HOME": "/workspace/hf"
+    }
   },
   "checks": {
     "idle_max_util_pct": 5,
@@ -26,6 +55,45 @@
     "hf_probe_url": "https://huggingface.co/Lykon/dreamshaper-8/resolve/main/unet/diffusion_pytorch_model.safetensors",
     "require_github": false
   },
-  "poll": {"interval_s": 150, "timeout_min": 30, "ssh_timeout_s": 480},
-  "balance_floor_usd": 3.0
+  "poll": {
+    "interval_s": 150,
+    "timeout_min": 30,
+    "ssh_timeout_s": 480
+  },
+  "balance_floor_usd": 3.0,
+  "any_regions": [
+    {
+      "dc": "EU-RO-1",
+      "latency_ms": 11
+    },
+    {
+      "dc": "EU-CZ-1",
+      "latency_ms": null
+    },
+    {
+      "dc": "EU-NL-1",
+      "latency_ms": 45
+    },
+    {
+      "dc": "EUR-NO-1",
+      "latency_ms": 69
+    },
+    {
+      "dc": "EUR-IS-1",
+      "latency_ms": 72
+    },
+    {
+      "dc": "EUR-IS-2",
+      "latency_ms": null
+    },
+    {
+      "dc": "EU-SE-1",
+      "latency_ms": null
+    },
+    {
+      "dc": "EU-FR-1",
+      "latency_ms": null
+    }
+  ],
+  "_comment_any_regions": "Used with `acquire --no-volume`: any region with stock, pod-local disk instead of a network volume (cold setup). latency_ms measured from the studio where known."
 }

@@ -107,13 +107,14 @@ def load_config(path: str | Path = HERE / "regions.json") -> dict:
     return json.loads(Path(path).read_text())
 
 
-def candidates(cfg: dict) -> list[dict]:
-    regions, gpus = cfg["regions"], cfg["gpus"]
+def candidates(cfg: dict, no_volume: bool = False, gpu_filter: list[str] | None = None) -> list[dict]:
+    regions = cfg["any_regions"] if no_volume else cfg["regions"]
+    gpus = [g for g in cfg["gpus"] if not gpu_filter or g.get("short") in gpu_filter or g["id"] in gpu_filter]
     if cfg.get("order", "region") == "gpu":
         pairs = [(r, g) for g in gpus for r in regions]
     else:
         pairs = [(r, g) for r in regions for g in gpus]
-    return [{"dc": r["dc"], "volume": r["volume"], "latency_ms": r.get("latency_ms"), "gpu": g["id"],
+    return [{"dc": r["dc"], "volume": r.get("volume"), "latency_ms": r.get("latency_ms"), "gpu": g["id"],
              "short": g.get("short", g["id"]), "max_price": g.get("max_price")} for r, g in pairs]
 
 
@@ -142,11 +143,15 @@ class _Pending:
 
 def _create(cfg: dict, cand: dict) -> tuple[str | None, dict | str]:
     p = cfg["pod"]
+    disk = int(cfg.get("_disk_gb") or 0)
     body = {"name": f"fluxrt-{cand['short'].lower()}-{cand['dc'].lower()}", "imageName": p["image"],
             "computeType": "GPU", "cloudType": p.get("cloud", "SECURE"), "gpuTypeIds": [cand["gpu"]], "gpuCount": 1,
-            "dataCenterIds": [cand["dc"]], "containerDiskInGb": p.get("container_disk_gb", 40), "volumeInGb": 0,
-            "volumeMountPath": "/workspace", "networkVolumeId": cand["volume"], "ports": p["ports"],
+            "dataCenterIds": [cand["dc"]], "containerDiskInGb": max(p.get("container_disk_gb", 40), 80 if disk else 0),
+            "volumeInGb": 0 if cand.get("volume") else (disk or 150),
+            "volumeMountPath": "/workspace", "ports": p["ports"],
             "supportPublicIp": True, "env": p.get("env", {})}
+    if cand.get("volume"):
+        body["networkVolumeId"] = cand["volume"]
     code, data = _request(f"{REST}/pods", "POST", body)
     if code in (200, 201) and isinstance(data, dict) and data.get("id"):
         return data["id"], data
@@ -204,10 +209,11 @@ def _check_host(cfg: dict, ip: str, port: int) -> tuple[bool, dict]:
 
 
 # ── main loop ────────────────────────────────────────────────────────────────
-def acquire(cfg: dict, timeout_min: float | None = None, dry_run: bool = False) -> dict | None:
+def acquire(cfg: dict, timeout_min: float | None = None, dry_run: bool = False,
+            no_volume: bool = False, gpu_filter: list[str] | None = None) -> dict | None:
     poll = cfg["poll"]
     deadline = time.time() + 60 * (timeout_min if timeout_min is not None else poll["timeout_min"])
-    cands = candidates(cfg)
+    cands = candidates(cfg, no_volume=no_volume, gpu_filter=gpu_filter)
     rnd = 0
     while True:
         rnd += 1
@@ -222,7 +228,7 @@ def acquire(cfg: dict, timeout_min: float | None = None, dry_run: bool = False) 
         if dry_run:
             say(f"balance ${bal:.2f}; candidates in priority order (stock is indicative only):")
             for i, cnd in enumerate(cands, 1):
-                print(f"  {i}. {cnd['dc']:9} {cnd['short']:10} ceiling ${cnd['max_price']:.2f}  "
+                print(f"  {i}. {cnd['dc']:9} {cnd['short']:10} vol={cnd['volume'] or 'none':10} ceiling ${cnd['max_price']:.2f}  "
                       f"stock={cnd['stock'] or '-'} price={cnd['price'] or '-'}  latency~{cnd['latency_ms']} ms")
             return None
         say(f"round {rnd}: balance ${bal:.2f}; reported stock: "
@@ -291,14 +297,35 @@ def main() -> int:
     a = sub.add_parser("acquire")
     a.add_argument("--timeout", type=float, default=None, help="minutes (default from config)")
     a.add_argument("--release", action="store_true", help="terminate right after acceptance (recipe test)")
+    a.add_argument("--no-volume", action="store_true", help="any region, pod-local disk (cold setup)")
+    a.add_argument("--gpus", default=None, help="comma-separated GPU short names to allow, e.g. PRO6000-S,PRO6000-W")
+    a.add_argument("--disk-gb", type=int, default=0, help="pod-local /workspace size for --no-volume (default 150)")
     r = sub.add_parser("release")
     r.add_argument("pod_id", nargs="?")
+    g = sub.add_parser("guard", help="terminate a pod after a hard time cap (run in the background)")
+    g.add_argument("pod_id")
+    g.add_argument("--max-hours", type=float, required=True)
+    g.add_argument("--since", type=float, default=None, help="epoch seconds the cap counts from (default: now)")
     ap.add_argument("--config", default=str(HERE / "regions.json"))
     args = ap.parse_args()
     cfg = load_config(args.config)
 
     if args.cmd == "dry-run":
         acquire(cfg, dry_run=True)
+        return 0
+    if args.cmd == "guard":
+        t0 = args.since or time.time(); cap = t0 + args.max_hours * 3600
+        say(f"guard: {args.pod_id} will be terminated at {time.strftime('%H:%M:%S', time.localtime(cap))}")
+        warned = False
+        while time.time() < cap:
+            code, d = _request(f"{REST}/pods/{args.pod_id}")
+            if code == 404 or (isinstance(d, dict) and d.get("desiredStatus") in ("TERMINATED", "EXITED")):
+                say("guard: pod already gone"); return 0
+            if not warned and cap - time.time() < 1800:
+                say(f"guard: 30 minutes left on {args.pod_id}"); warned = True
+            time.sleep(60)
+        say(f"guard: hard cap reached, terminating {args.pod_id}")
+        release(args.pod_id); log_attempt({"pod": args.pod_id, "outcome": "guard_terminated"})
         return 0
     if args.cmd == "release":
         pid = args.pod_id or json.loads(LAST_POD.read_text())["id"]
@@ -309,7 +336,10 @@ def main() -> int:
     signal.signal(signal.SIGTERM, _cleanup_and_exit)
     signal.signal(signal.SIGINT, _cleanup_and_exit)
     try:
-        pod = acquire(cfg, timeout_min=args.timeout)
+        if args.disk_gb:
+            cfg["_disk_gb"] = args.disk_gb
+        pod = acquire(cfg, timeout_min=args.timeout, no_volume=args.no_volume,
+                      gpu_filter=args.gpus.split(",") if args.gpus else None)
     except Exception:
         _cleanup_and_exit()
         raise
