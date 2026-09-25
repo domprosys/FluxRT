@@ -11,8 +11,9 @@ With one of our network volumes attached, set `WS=/workspace` to use what is on 
   sd_controlnet_config | sdxl_controlnet_config | web_bf16_config | web_bf16_liveportrait_config | sdv2_config |
   sd_config | web_config.
 - `ACCESS_TOKEN` = optional password; then open the page as `<Connect HTTP 8000 link>/?token=<ACCESS_TOKEN>`.
-- `ENABLE_TRT=1` = TensorRT for the SD engines (1.7-1.9x faster without ControlNet), but engines build on first
-  start: +10-30 min on every fresh pod.
+- `ENABLE_TRT=1` = TensorRT for the SD engines (SD-Turbo 1.7x, SDXL-Turbo 1.9x, SD+ControlNet 1.4x faster), but
+  engines build on first start: +10-30 min on a fresh pod, unless `TRT_CACHE_REPO` (a private Hugging Face repo)
+  and `HF_TOKEN` (write access) are set: then the first pod per GPU type uploads them and later pods download them.
 - `WS` = install root (default `/root/ws` in this template).
 - `IDLE_STOP_MIN` = stop the pod after this many minutes with no visitor (default 30; empty = never).
   `IDLE_ACTION=terminate` terminates instead. A stopped pod keeps its URL; starting it again re-runs the setup.
