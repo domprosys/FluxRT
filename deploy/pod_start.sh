@@ -21,6 +21,10 @@ mkdir -p "$LOGS"; rm -f "$LOGS/FAILED"
 CFG=${BACKEND_CONFIG:-sd_controlnet_config}
 CFG=${CFG%.json}
 export HF_HOME=$WS/hf PATH="$HOME/.local/bin:$PATH"
+# small CPU thread pools: default-sized ones (host cores) blow the pod's CPU quota and the throttling
+# adds ~50 ms to a third of the frames (see scripts/serve_web.py)
+T=${FLUXRT_THREADS:-4}
+export OMP_NUM_THREADS=$T MKL_NUM_THREADS=$T OPENBLAS_NUM_THREADS=$T FLUXRT_THREADS=$T
 log() { echo "[pod_start $(date +%H:%M:%S)] $*"; }
 T0=$(date +%s)
 log "backend config: $CFG"

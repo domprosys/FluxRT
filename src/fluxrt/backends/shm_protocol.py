@@ -34,6 +34,13 @@ import time
 import traceback
 from multiprocessing import resource_tracker, shared_memory
 
+# Cap the CPU thread pools (OpenMP/MKL size them to the host's cores: 224 on a RunPod PRO 6000 host,
+# 469 threads in one worker). Pods get a CPU quota (cpu.max ~24 CPUs); spinning pools exhausted it and
+# the kernel paused the process for the rest of each 100 ms period: 30-40% of frames took +50 ms
+# (2026-09-25). FLUXRT_THREADS overrides the default 4. Must run before numpy/torch are imported.
+for _v in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
+    os.environ.setdefault(_v, os.environ.get("FLUXRT_THREADS", "4"))
+
 import numpy as np
 
 

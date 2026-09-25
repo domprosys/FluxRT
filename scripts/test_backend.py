@@ -11,7 +11,9 @@ input/output pair. Benchmark extras: per-sample generation time after --warmup s
 interpolated frames for fluxrt), GPU memory, model load time, output samples at fixed
 input-frame indices, all written to --json.
 """
-import argparse, json, logging, statistics, sys, time
+import argparse, json, logging, os, statistics, sys, time
+for _v in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):  # see serve_web.py
+    os.environ.setdefault(_v, os.environ.get("FLUXRT_THREADS", "4"))
 from pathlib import Path
 import cv2, numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
