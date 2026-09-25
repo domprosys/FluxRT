@@ -11,7 +11,7 @@ input/output pair. Benchmark extras: per-sample generation time after --warmup s
 interpolated frames for fluxrt), GPU memory, model load time, output samples at fixed
 input-frame indices, all written to --json.
 """
-import argparse, json, statistics, sys, time
+import argparse, json, logging, statistics, sys, time
 from pathlib import Path
 import cv2, numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -42,6 +42,8 @@ def main():
     ap.add_argument("--set", action="append", default=[], metavar="FRAME:NAME=VALUE",
                     help="send set_param NAME=VALUE (JSON value) when input frame FRAME is pushed, e.g. 100:faceid_capture=true")
     a = ap.parse_args()
+    # worker log events (load/warm-up/reset timings) reach the backend's logger at INFO
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     cfg = json.load(open(a.config))
     be = build_backend(a.config, cfg)
     h, w = be.resolution
