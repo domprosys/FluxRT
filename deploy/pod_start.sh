@@ -21,6 +21,9 @@ mkdir -p "$LOGS"; rm -f "$LOGS/FAILED"
 CFG=${BACKEND_CONFIG:-sd_controlnet_config}
 CFG=${CFG%.json}
 export HF_HOME=$WS/hf PATH="$HOME/.local/bin:$PATH"
+# the template passes HF_TOKEN as {{ RUNPOD_SECRET_hf_token }}; if that ever arrives unresolved, drop it:
+# a bogus token makes every Hugging Face download fail, public ones included
+case "${HF_TOKEN:-}" in *"{{"*|*"}}"*) echo "[pod_start] HF_TOKEN is an unresolved secret reference: ignoring it"; unset HF_TOKEN ;; esac
 # small CPU thread pools: default-sized ones (host cores) blow the pod's CPU quota and the throttling
 # adds ~50 ms to a third of the frames (see scripts/serve_web.py)
 T=${FLUXRT_THREADS:-4}
