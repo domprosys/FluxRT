@@ -237,8 +237,8 @@ class LivePortraitPostProcessor(BasePostProcessor):
 
     @classmethod
     def from_config(cls, cfg: dict) -> "LivePortraitPostProcessor":
-        """Build from the config's "lip_transfer" block (ignores enable/start_active)."""
-        return cls(**{k: v for k, v in cfg.items() if k not in _ORCHESTRATION_KEYS})
+        """Build from the config's "lip_transfer" block (ignores enable/start_active and "_" comment keys)."""
+        return cls(**{k: v for k, v in cfg.items() if k not in _ORCHESTRATION_KEYS and not k.startswith("_")})
 
     # ── internals ────────────────────────────────────────────────────────────
     def _warmup(self) -> None:
