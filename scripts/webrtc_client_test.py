@@ -89,6 +89,7 @@ async def main(a):
               f"in={st['input_fps']} gen={st['base_fps']} fps proc={st['proc_time_s']*1000:.0f}ms gpu={st['gpu_reserved_mb']}MB "
               f"prompt#{st['prompt_index']}", flush=True)
 
+    os.makedirs(a.out, exist_ok=True)  # cv2.imwrite fails silently into a missing directory
     for k, fr in enumerate(got["frames"][-2:]):
         cv2.imwrite(f"{a.out}/out_{k}.png", fr)
     if cam.last is not None:
