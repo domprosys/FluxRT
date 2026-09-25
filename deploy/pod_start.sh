@@ -5,7 +5,9 @@
 #   BACKEND_CONFIG  config name in configs/ (default sd_controlnet_config)
 #                   e.g. sd_config, sd_controlnet_config, web_config, web_bf16_config, sdv2_config
 #   ACCESS_TOKEN    optional; if set, open the page once as  <proxy-url>/?token=<ACCESS_TOKEN>
-#   HF_TOKEN        optional; authenticated Hugging Face downloads
+#   HF_TOKEN        optional; authenticated Hugging Face downloads (and the TensorRT engine cache)
+#   ENABLE_TRT=1    TensorRT for the SD engines; TRT_CACHE_REPO=<hf-user>/<repo> (private, HF_TOKEN with
+#                   write access) caches the built engines there (deploy/trt_engine_cache.sh)
 #   WS              install root (default /workspace). /root/ws on a large container disk is much
 #                   faster where /workspace is a network filesystem (see template_post_start.sh)
 #
@@ -83,6 +85,11 @@ if ! bash "$REPO/deploy/runpod_setup.sh" > "$LOGS/setup.log" 2>&1; then
   exit 1
 fi
 log "setup done in $(( $(date +%s) - T0 ))s; starting server"
+N_ENG=0
+if [ "${ENABLE_TRT:-0}" = 1 ]; then
+  bash "$REPO/deploy/trt_engine_cache.sh" pull 2>&1 | tee -a "$LOGS/setup.log" || true
+  N_ENG=$(find "$WS/engines" -name '*.engine' 2>/dev/null | wc -l)
+fi
 
 # ── hand port 8000 over to the real server ───────────────────────────────────
 kill "$STATUS_PID" 2>/dev/null; sleep 1
@@ -90,7 +97,12 @@ cd "$REPO"
 setsid .venv/bin/python scripts/serve_web.py --config "configs/$CFG.json" --port 8000 > "$LOGS/server.log" 2>&1 < /dev/null &
 for i in $(seq 1 360); do
   if curl -s -m 3 http://127.0.0.1:8000/api/state 2>/dev/null | grep -q '"ready": *true'; then
-    log "READY in $(( $(date +%s) - T0 ))s total"; exit 0
+    log "READY in $(( $(date +%s) - T0 ))s total"
+    if [ "${ENABLE_TRT:-0}" = 1 ] && [ "$(find "$WS/engines" -name '*.engine' 2>/dev/null | wc -l)" -gt "$N_ENG" ]; then
+      log "new TensorRT engines were built: pushing them to the cache in the background"
+      setsid bash "$REPO/deploy/trt_engine_cache.sh" push > "$LOGS/trt_cache_push.log" 2>&1 < /dev/null &
+    fi
+    exit 0
   fi
   sleep 5
 done
