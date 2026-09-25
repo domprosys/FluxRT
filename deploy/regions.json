@@ -1,16 +1,11 @@
 {
-  "_comment": "GPU acquisition preferences for deploy/runpod_acquire.py. Only regions holding a prepared network volume are listed. Order = priority. latency_ms is the measured round trip from the studio (Romania, RDS), 2026-09-23.",
+  "_comment": "GPU acquisition preferences for deploy/runpod_acquire.py. \"regions\" = regions holding a prepared network volume (EUR-IS-1's was deleted 2026-09-25; the template installs to the container disk, so volumes are optional); with none left, acquire falls back to \"any_regions\". Order = priority. latency_ms is the measured round trip from the studio (Romania, RDS), 2026-09-23.",
   "order": "region",
   "regions": [
     {
       "dc": "EU-RO-1",
       "volume": "w73oznqch4",
       "latency_ms": 11
-    },
-    {
-      "dc": "EUR-IS-1",
-      "volume": "ji13x898lc",
-      "latency_ms": 72
     }
   ],
   "gpus": [

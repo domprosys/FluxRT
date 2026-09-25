@@ -108,7 +108,7 @@ def load_config(path: str | Path = HERE / "regions.json") -> dict:
 
 
 def candidates(cfg: dict, no_volume: bool = False, gpu_filter: list[str] | None = None) -> list[dict]:
-    regions = cfg["any_regions"] if no_volume else cfg["regions"]
+    regions = cfg["any_regions"] if no_volume or not cfg.get("regions") else cfg["regions"]
     gpus = [g for g in cfg["gpus"] if not gpu_filter or g.get("short") in gpu_filter or g["id"] in gpu_filter]
     if cfg.get("order", "region") == "gpu":
         pairs = [(r, g) for g in gpus for r in regions]
