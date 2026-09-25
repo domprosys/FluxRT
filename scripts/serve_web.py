@@ -225,6 +225,10 @@ class Server:
         self.pcs: dict[str, RTCPeerConnection] = {}
         self.roles: dict[str, str] = {}
         self.stage: str | None = None
+        # IDLE_STOP_MIN > 0 (RunPod only): stop this pod after that many minutes without a visitor
+        self.idle_min = float(os.environ.get("IDLE_STOP_MIN", "0") or 0)
+        self.idle_action = "terminate" if os.environ.get("IDLE_ACTION", "stop").lower() == "terminate" else "stop"
+        self._last_peer_t = time.monotonic()
 
         self.t0 = time.time()
         self._in_times: list[float] = []
@@ -338,6 +342,36 @@ class Server:
             if self.cycle_enabled and time.monotonic() >= self._cycle_deadline:
                 self.apply_index(self.prompt_index + 1)
 
+    async def idle_loop(self):
+        """Stop (IDLE_ACTION=terminate: terminate) this RunPod pod once no WebRTC peer has been connected
+        for IDLE_STOP_MIN minutes, counted from when the backend is ready. Uses the runpodctl that RunPod
+        preinstalls on pods. A stopped pod keeps its URL and env; its container disk (WS=/root/ws) is
+        wiped, so starting it again re-runs the setup."""
+        pod = os.environ.get("RUNPOD_POD_ID")
+        if self.idle_min <= 0 or not pod:
+            if self.idle_min > 0:
+                log.warning("IDLE_STOP_MIN is set but RUNPOD_POD_ID is not: idle stop disabled")
+            return
+        log.info("idle %s after %g min without a visitor (pod %s)", self.idle_action, self.idle_min, pod)
+        while True:
+            await asyncio.sleep(30)
+            if self.pcs or not self.backend.is_ready():
+                self._last_peer_t = time.monotonic()
+                continue
+            idle = time.monotonic() - self._last_peer_t
+            if idle < self.idle_min * 60:
+                continue
+            cmd = ["runpodctl", "remove" if self.idle_action == "terminate" else "stop", "pod", pod]
+            log.warning("no visitor for %.1f min: %s", idle / 60, " ".join(cmd))
+            try:
+                proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE,
+                                                            stderr=asyncio.subprocess.STDOUT)
+                out, _ = await proc.communicate()
+                log.warning("runpodctl exit %s: %s", proc.returncode, out.decode(errors="replace").strip()[-300:])
+            except OSError as e:
+                log.warning("runpodctl failed: %s", e)
+            self._last_peer_t = time.monotonic()  # if the pod is still here, try again after another period
+
     # -- webrtc --------------------------------------------------------------
     async def consume_input(self, track: MediaStreamTrack, pc_id: str):
         log.info("stage %s: receiving camera", pc_id[:8])
@@ -429,6 +463,7 @@ class Server:
             "input_fps": round(self.input_fps(), 1),
             "out_fps": self.args.out_fps,
             "smoothing_alpha": self.alpha,
+            "idle_stop_min": self.idle_min or None,
         }
 
 
@@ -437,11 +472,12 @@ def build_app(server: Server) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         server.start()
-        task = asyncio.ensure_future(server.cycle_loop())
+        tasks = [asyncio.ensure_future(server.cycle_loop()), asyncio.ensure_future(server.idle_loop())]
         try:
             yield
         finally:
-            task.cancel()
+            for task in tasks:
+                task.cancel()
             await server.close()
 
     app = FastAPI(title="Real-time style transfer", lifespan=lifespan)

@@ -36,7 +36,8 @@ def desired() -> dict:
         "volumeInGb": 20,  # /workspace: logs only (it can be a network filesystem)
         "volumeMountPath": "/workspace",
         "ports": ["8000/http", "22/tcp"],
-        "env": {"BACKEND_CONFIG": "sd_controlnet_config", "WS": "/root/ws"},
+        # multi_all: all four engines resident (RTX PRO 6000 class); stop the pod after 30 idle minutes
+        "env": {"BACKEND_CONFIG": "multi_all_config", "WS": "/root/ws", "IDLE_STOP_MIN": "30"},
         "readme": (HERE / "template_readme.md").read_text(),
     }
 

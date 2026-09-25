@@ -67,6 +67,7 @@ const $ = id => document.getElementById(id);
 const q = new URLSearchParams(location.search);
 const relayOnly = q.get('relay') === '1';
 let pc = null, pcId = null, camStream = null, state = null, role = null;
+let net = null;  // {rtt ms, path} of the selected ICE candidate pair, sampled every 2 s
 
 function say(t) { $('msg').textContent = t || ''; }
 function hud(t) { $('hud').textContent = t; }
@@ -215,6 +216,7 @@ function render(s) {
   hud(
     (s.alive === false ? `${name}: backend DIED` : s.ready ? `${name} ready` : `loading ${name}… ${Math.round(s.uptime_s)}s`) +
     `\nwebrtc: ${conn}${role ? ' (' + role + ')' : ''}` +
+    (net ? ` · rtt ${net.rtt == null ? '?' : net.rtt + ' ms'}${net.path ? ' · ' + net.path : ''}` : '') +
     `\nin ${s.input_fps} fps · gen ${s.base_fps} fps (${Math.round(s.proc_time_s * 1000)} ms) · out ${s.out_fps} fps` +
     ('interpolation_exp' in s ? ` · rife ${s.interpolation_exp ? (2 ** s.interpolation_exp) + 'x' : 'off'}` : '') +
     `\nstage ${s.stage_busy ? 'busy' : 'free'} · viewers ${s.viewers} · gpu ${s.gpu_reserved_mb} MB` +
@@ -248,6 +250,23 @@ function renderCnets(list) {
     });
   }
 }
+
+async function sampleNet() {
+  if (!pc || pc.connectionState !== 'connected') { net = null; return; }
+  try {
+    const st = await pc.getStats();
+    let pair = null;
+    st.forEach(r => { if (r.type === 'transport' && r.selectedCandidatePairId) pair = st.get(r.selectedCandidatePairId); });
+    if (!pair) st.forEach(r => { if (r.type === 'candidate-pair' && r.nominated && r.state === 'succeeded') pair = r; });
+    if (!pair) { net = null; return; }
+    const local = st.get(pair.localCandidateId);
+    net = {
+      rtt: pair.currentRoundTripTime != null ? Math.round(pair.currentRoundTripTime * 1000) : null,
+      path: local ? (local.candidateType === 'relay' ? 'via TURN relay' : local.candidateType) : '',
+    };
+  } catch (e) { net = null; }
+}
+setInterval(sampleNet, 2000);
 
 async function poll() {
   try { render(await (await fetch('/api/state')).json()); } catch (e) { hud('server unreachable'); }
