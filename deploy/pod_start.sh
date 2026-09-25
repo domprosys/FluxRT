@@ -6,13 +6,15 @@
 #                   e.g. sd_config, sd_controlnet_config, web_config, web_bf16_config, sdv2_config
 #   ACCESS_TOKEN    optional; if set, open the page once as  <proxy-url>/?token=<ACCESS_TOKEN>
 #   HF_TOKEN        optional; authenticated Hugging Face downloads
+#   WS              install root (default /workspace). /root/ws on a large container disk is much
+#                   faster where /workspace is a network filesystem (see template_post_start.sh)
 #
 # Installs only what BACKEND_CONFIG needs (see runpod_setup.sh), serving a live
 # progress page on :8000 meanwhile, then starts the WebRTC server on :8000.
 set -uo pipefail
-WS=/workspace
+export WS=${WS:-/workspace}   # exported: runpod_setup.sh and the SD worker (TensorRT engines) read it
 REPO=$WS/fluxrt
-LOGS=$WS/logs
+LOGS=/workspace/logs          # the progress page reads its files from here
 mkdir -p "$LOGS"; rm -f "$LOGS/FAILED"
 CFG=${BACKEND_CONFIG:-sd_controlnet_config}
 CFG=${CFG%.json}
