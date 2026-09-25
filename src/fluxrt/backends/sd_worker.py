@@ -272,6 +272,35 @@ def _patch_controlnet_engines(allowed: set | None, log) -> None:
     EngineManager.get_or_load_controlnet_engine = get_or_load_controlnet_engine
 
 
+def _patch_faceid_plus_detection(log) -> None:
+    """Load FaceID-Plus / FaceID-PlusV2 checkpoints with Diffusers_IPAdapter @405f87d.
+
+    It detects "plus" checkpoints by an image_proj "latents" key, which FaceID-Plus files don't have (they
+    carry a perceiver_resampler), so it built the plain FaceID projection and load_state_dict failed. Its v2
+    switch ("faceidplusv2" in the checkpoint dict) is only ever set by loaders that look at the file name.
+    Fix both right before the projection model is built (FaceID-Plus keeps its 4 image tokens)."""
+    from diffusers_ipadapter import IPAdapter
+
+    if getattr(IPAdapter, "_fluxrt_faceid_plus", False):
+        return
+    init0, proj0 = IPAdapter.__init__, IPAdapter._init_projection_model
+
+    def __init__(self, *args, **kw):
+        self._fluxrt_ckpt = str(kw.get("ipadapter_ckpt_path") or (args[1] if len(args) > 1 else ""))
+        init0(self, *args, **kw)
+
+    def _init_projection_model(self, ipadapter_model):
+        image_proj = ipadapter_model.get("image_proj", {})
+        if self.is_faceid and not self.is_plus and any(k.startswith("perceiver_resampler.") for k in image_proj):
+            self.is_plus = True
+            self.is_faceidv2 = self.is_faceidv2 or "plusv2" in getattr(self, "_fluxrt_ckpt", "").lower()
+            log(f"FaceID-Plus checkpoint detected (v2 shortcut: {self.is_faceidv2})")
+        return proj0(self, ipadapter_model)
+
+    IPAdapter.__init__, IPAdapter._init_projection_model = __init__, _init_projection_model
+    IPAdapter._fluxrt_faceid_plus = True
+
+
 SDXL_ADDED_COND = (("text_embeds", 1280), ("time_ids", 6))
 
 
@@ -580,6 +609,8 @@ class SDWorker(WorkerBase):
         if self.cached and self.acceleration != "tensorrt":
             _trt_torch_helpers()  # lets the wrapper's create_kvo_cache import work without TensorRT installed
         ip_cfg = self._ipadapter_config(w)
+        if ip_cfg and ip_cfg["type"] == "faceid":
+            _patch_faceid_plus_detection(self.log)
         if w.get("variant"):
             _patch_variant_loading(str(w["variant"]), self.log)
 
