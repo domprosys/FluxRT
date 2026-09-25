@@ -117,8 +117,9 @@ def main():
                         diffs.append(float(np.abs(small - prev_small).mean()))
                     prev_small = small
             last_sig = sig
-            if n in pending_samples:
-                cv2.imwrite(str(out_dir / f"out_{pending_samples.pop(n):04d}.png"), out)
+            # first output at or after the target frame (some backends return None between new frames)
+            for k in [k for k in pending_samples if n >= k]:
+                cv2.imwrite(str(out_dir / f"out_{pending_samples.pop(k):04d}.png"), out)
         if in_bench and time.time() - last_stat >= 0.25:
             st = be.stats()
             if st.get("proc_time_s"):
