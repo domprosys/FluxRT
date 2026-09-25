@@ -2,7 +2,7 @@
 """Deploy the RunPod template as published, verify it end to end, terminate the pod.
 
     .venv/bin/python deploy/verify_template.py [--gpus PRO6000-S,PRO6000-W] [--config multi_config]
-        [--idle-min 3] [--clip .cache/bench/clip.mp4] [--stream-s 90] [--max-min 60]
+        [--idle-min 3] [--clip .cache/bench/clip.mp4] [--stream-s 90] [--max-min 60] [--env ENABLE_TRT=1]
 
 Creates a pod from the template with the template's own env plus a random ACCESS_TOKEN and
 IDLE_STOP_MIN=--idle-min (--config overrides BACKEND_CONFIG), trying the regions of regions.json
@@ -64,6 +64,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--gpus", default="PRO6000-S,PRO6000-W")
     ap.add_argument("--config", default=None, help="BACKEND_CONFIG override (default: the template's)")
+    ap.add_argument("--env", action="append", default=[], metavar="KEY=VALUE", help="extra pod env, e.g. ENABLE_TRT=1")
     ap.add_argument("--idle-min", type=float, default=3.0)
     ap.add_argument("--clip", default=str(REPO / ".cache" / "bench" / "clip.mp4"))
     ap.add_argument("--stream-s", type=int, default=90)
@@ -81,6 +82,7 @@ def main() -> int:
     env = dict(tpl.get("env") or {}, ACCESS_TOKEN=token, IDLE_STOP_MIN=str(args.idle_min))
     if args.config:
         env["BACKEND_CONFIG"] = args.config
+    env.update(kv.split("=", 1) for kv in args.env)
     say(f"balance ${bal:.2f}; template env {({k: v for k, v in env.items() if k != 'ACCESS_TOKEN'})}")
 
     pod, dc, created = create(args, env)
@@ -157,6 +159,8 @@ def main() -> int:
             r = ra.ssh(ssh_ip, int(ssh_port), (
                 "env | grep -E '^(WS|IDLE_STOP_MIN|IDLE_ACTION|BACKEND_CONFIG|RUNPOD_POD_ID)=' | sort; "
                 "[ -n \"$RUNPOD_API_KEY\" ] && echo RUNPOD_API_KEY=set || echo RUNPOD_API_KEY=unset; "
+                "case \"${HF_TOKEN:-}\" in '') echo HF_TOKEN=unset;; *'{{'*) echo HF_TOKEN=UNRESOLVED;; *) echo HF_TOKEN=set;; esac; "
+                "grep -h 'trt-cache' /workspace/logs/setup.log /workspace/logs/pod_start.log 2>/dev/null | tail -3; "
                 "command -v runpodctl && runpodctl version 2>&1 | head -1; echo ---; df -hT / /workspace; echo ---; "
                 "du -sh /root/ws/* /root/venvs 2>/dev/null | sort -h | tail -8; echo ---; cat /workspace/logs/netcheck.txt; "
                 "tail -n 15 /workspace/logs/pod_start.log; echo ---; grep -E 'idle|runpodctl' /workspace/logs/server.log | tail -5"),
