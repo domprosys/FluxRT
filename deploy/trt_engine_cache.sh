@@ -37,8 +37,8 @@ case "$MODE" in
     n=$(find "$DIR" -name '*.engine' | wc -l)
     [ "$n" -gt 0 ] || { log "no engines in $DIR"; exit 0; }
     t0=$(date +%s)
-    # skip lock files and per-build scratch; the engine dirs carry their own onnx-free layout
-    hf upload "$TRT_CACHE_REPO" "$DIR" "$TAG" --repo-type model --exclude "*.lock" "*.onnx" "*.onnx.data" \
+    # engines only (no build locks or ONNX export leftovers); one pattern works with old and new hf CLIs
+    hf upload "$TRT_CACHE_REPO" "$DIR" "$TAG" --repo-type model --include "*.engine" \
       --commit-message "engines for $TAG" >/dev/null
     log "pushed $n engines for $TAG ($(du -sh "$DIR" | cut -f1)) in $(( $(date +%s) - t0 ))s"
     ;;
