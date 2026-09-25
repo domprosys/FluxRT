@@ -276,10 +276,12 @@ def _patch_faceid_plus_detection(log) -> None:
     """Load FaceID-Plus / FaceID-PlusV2 checkpoints with Diffusers_IPAdapter @405f87d.
 
     It detects "plus" checkpoints by an image_proj "latents" key, which FaceID-Plus files don't have (they
-    carry a perceiver_resampler), so it built the plain FaceID projection and load_state_dict failed. Its v2
-    switch ("faceidplusv2" in the checkpoint dict) is only ever set by loaders that look at the file name.
-    Fix both right before the projection model is built (FaceID-Plus keeps its 4 image tokens)."""
+    carry a perceiver_resampler), so it built the plain FaceID projection and load_state_dict failed; its
+    factory also hard-codes 16 tokens for "plus" models while FaceID-Plus has 4. Its v2 switch
+    ("faceidplusv2" in the checkpoint dict) is only ever set by loaders that look at the file name.
+    Build the FaceID-Plus projection here, sized from the checkpoint."""
     from diffusers_ipadapter import IPAdapter
+    from diffusers_ipadapter.ip_adapter.projection_models import FaceIDPlusProjectionModel
 
     if getattr(IPAdapter, "_fluxrt_faceid_plus", False):
         return
@@ -294,7 +296,12 @@ def _patch_faceid_plus_detection(log) -> None:
         if self.is_faceid and not self.is_plus and any(k.startswith("perceiver_resampler.") for k in image_proj):
             self.is_plus = True
             self.is_faceidv2 = self.is_faceidv2 or "plusv2" in getattr(self, "_fluxrt_ckpt", "").lower()
-            log(f"FaceID-Plus checkpoint detected (v2 shortcut: {self.is_faceidv2})")
+            tokens = image_proj["proj.2.weight"].shape[0] // self.cross_attention_dim
+            log(f"FaceID-Plus checkpoint detected ({tokens} tokens, v2 shortcut: {self.is_faceidv2})")
+            return FaceIDPlusProjectionModel(
+                cross_attention_dim=self.cross_attention_dim, id_embeddings_dim=512,
+                clip_embeddings_dim=self.image_encoder.config.hidden_size, num_tokens=tokens,
+            ).to(self.device, dtype=self.dtype)
         return proj0(self, ipadapter_model)
 
     IPAdapter.__init__, IPAdapter._init_projection_model = __init__, _init_projection_model
