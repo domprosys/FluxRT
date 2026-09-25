@@ -41,6 +41,31 @@ from multiprocessing import resource_tracker, shared_memory
 for _v in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
     os.environ.setdefault(_v, os.environ.get("FLUXRT_THREADS", "4"))
 
+
+def cap_onnxruntime_threads() -> None:
+    """Default onnxruntime sessions to FLUXRT_THREADS non-spinning intra-op threads. insightface (FaceID,
+    LivePortrait's face detector) builds its sessions with default options: one thread per physical core,
+    spinning while idle, which eats a pod's CPU quota like the OpenMP pools did. Explicit options win."""
+    try:
+        import onnxruntime as ort
+    except ImportError:
+        return
+    if getattr(ort.InferenceSession, "_fluxrt_capped", False):
+        return
+    n = int(os.environ.get("FLUXRT_THREADS", "4"))
+    init0 = ort.InferenceSession.__init__
+
+    def __init__(self, path_or_bytes, sess_options=None, *args, **kw):
+        if sess_options is None:
+            sess_options = ort.SessionOptions()
+            sess_options.intra_op_num_threads = n
+            sess_options.inter_op_num_threads = 1
+            sess_options.add_session_config_entry("session.intra_op.allow_spinning", "0")
+        init0(self, path_or_bytes, sess_options, *args, **kw)
+
+    ort.InferenceSession.__init__ = __init__
+    ort.InferenceSession._fluxrt_capped = True
+
 import numpy as np
 
 

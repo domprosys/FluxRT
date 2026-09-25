@@ -199,6 +199,9 @@ class LivePortraitPostProcessor(BasePostProcessor):
             providers = [("CUDAExecutionProvider", {"device_id": dev_id}), "CPUExecutionProvider"]
         else:
             providers = ["CPUExecutionProvider"]
+        from fluxrt.backends.shm_protocol import cap_onnxruntime_threads
+
+        cap_onnxruntime_threads()  # insightface opens its onnxruntime sessions with default (all-core) pools
         self.face_analysis = lp.FaceAnalysisDIY(
             name="buffalo_l",
             root=insightface_dir,

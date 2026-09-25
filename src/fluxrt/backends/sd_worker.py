@@ -87,12 +87,13 @@ from __future__ import annotations
 
 import importlib
 import os
+import re
 import sys
 import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from shm_protocol import WorkerBase  # noqa: E402
+from shm_protocol import WorkerBase, cap_onnxruntime_threads  # noqa: E402
 
 import threading  # noqa: E402
 
@@ -298,10 +299,18 @@ def _patch_faceid_plus_detection(log) -> None:
             self.is_faceidv2 = self.is_faceidv2 or "plusv2" in getattr(self, "_fluxrt_ckpt", "").lower()
             tokens = image_proj["proj.2.weight"].shape[0] // self.cross_attention_dim
             log(f"FaceID-Plus checkpoint detected ({tokens} tokens, v2 shortcut: {self.is_faceidv2})")
-            return FaceIDPlusProjectionModel(
+            model = FaceIDPlusProjectionModel(
                 cross_attention_dim=self.cross_attention_dim, id_embeddings_dim=512,
                 clip_embeddings_dim=self.image_encoder.config.hidden_size, num_tokens=tokens,
-            ).to(self.device, dtype=self.dtype)
+            )
+            # the library's FeedForward wraps its layers in .net; the checkpoint has them bare
+            # ("perceiver_resampler.layers.0.1.0.weight"): rename in place, the caller loads this dict next
+            want = set(model.state_dict())
+            for k in list(image_proj):
+                k2 = re.sub(r"^(perceiver_resampler\.layers\.\d+\.1)\.(\d+)\.", r"\1.net.\2.", k)
+                if k2 != k and k not in want and k2 in want:
+                    image_proj[k2] = image_proj.pop(k)
+            return model.to(self.device, dtype=self.dtype)
         return proj0(self, ipadapter_model)
 
     IPAdapter.__init__, IPAdapter._init_projection_model = __init__, _init_projection_model
@@ -618,6 +627,7 @@ class SDWorker(WorkerBase):
         ip_cfg = self._ipadapter_config(w)
         if ip_cfg and ip_cfg["type"] == "faceid":
             _patch_faceid_plus_detection(self.log)
+            cap_onnxruntime_threads()  # before insightface opens its sessions
         if w.get("variant"):
             _patch_variant_loading(str(w["variant"]), self.log)
 
