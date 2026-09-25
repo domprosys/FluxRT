@@ -14,6 +14,8 @@ MODE=${1:?usage: $0 pull|push}
 WS=${WS:-/workspace}; VENVS=${VENVS:-/root/venvs}
 export PATH="$HOME/.local/bin:$PATH" HF_HUB_DISABLE_TELEMETRY=1
 log() { echo "[trt-cache $(date +%H:%M:%S)] $*"; }
+HF=$(command -v hf || echo "$VENVS/fluxrt/bin/hf")   # the bootstrap installs the CLI in the server venv
+[ -x "$HF" ] || { log "Hugging Face CLI not found ($HF)"; exit 0; }
 [ -n "${TRT_CACHE_REPO:-}" ] || { log "TRT_CACHE_REPO not set: nothing to do"; exit 0; }
 [ -n "${HF_TOKEN:-}" ] || { log "HF_TOKEN not set: cannot reach the private repo $TRT_CACHE_REPO"; exit 0; }
 
@@ -26,9 +28,10 @@ mkdir -p "$DIR"
 
 case "$MODE" in
   pull)
-    t0=$(date +%s)
-    if hf download "$TRT_CACHE_REPO" --repo-type model --include "$TAG/*" --local-dir "$WS/engines" >/dev/null; then
-      log "pulled $(find "$DIR" -name '*.engine' | wc -l) engines for $TAG ($(du -sh "$DIR" | cut -f1)) in $(( $(date +%s) - t0 ))s"
+    t0=$(date +%s); n0=$(find "$DIR" -name '*.engine' | wc -l)
+    if "$HF" download "$TRT_CACHE_REPO" --repo-type model --include "$TAG/*" --local-dir "$WS/engines" >/dev/null; then
+      n1=$(find "$DIR" -name '*.engine' | wc -l)
+      log "pulled $(( n1 - n0 )) new engines for $TAG ($n1 on disk, $(du -sh "$DIR" | cut -f1)) in $(( $(date +%s) - t0 ))s"
     else
       log "no cached engines for $TAG yet (or the repo is unreachable): they will be built on first start"
     fi
@@ -38,7 +41,7 @@ case "$MODE" in
     [ "$n" -gt 0 ] || { log "no engines in $DIR"; exit 0; }
     t0=$(date +%s)
     # engines only (no build locks or ONNX export leftovers); one pattern works with old and new hf CLIs
-    hf upload "$TRT_CACHE_REPO" "$DIR" "$TAG" --repo-type model --include "*.engine" \
+    "$HF" upload "$TRT_CACHE_REPO" "$DIR" "$TAG" --repo-type model --include "*.engine" \
       --commit-message "engines for $TAG" >/dev/null
     log "pushed $n engines for $TAG ($(du -sh "$DIR" | cut -f1)) in $(( $(date +%s) - t0 ))s"
     ;;
