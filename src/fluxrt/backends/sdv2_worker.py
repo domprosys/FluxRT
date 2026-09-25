@@ -141,7 +141,10 @@ class SDV2Worker(WorkerBase):
 
         self.torch = torch
         torch.set_grad_enabled(False)
-        torch.backends.cudnn.benchmark = bool(w.get("cudnn_benchmark", True))
+        # off by default: with benchmark on, every stream reset (start, prompt change, engine switch)
+        # re-autotuned the causal VAE's first-chunk convs, ~12 s per reset on an RTX PRO 6000 for no
+        # steady-state gain (94 vs 94 ms/chunk); off, a reset takes ~0.2 s
+        torch.backends.cudnn.benchmark = bool(w.get("cudnn_benchmark", False))
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
         self.device = torch.device(w.get("device", "cuda"))
@@ -235,7 +238,7 @@ class SDV2Worker(WorkerBase):
         self._enc_cv = threading.Condition()
         self.stats = {"chunks": 0, "chunk_ms": 0.0, "latency_ms": 0.0, "dropped_in": 0, "out_frames": 0, "resets": 0}
 
-        # --- warmup (cudnn autotune, SDPA kernels, allocator) on synthetic frames
+        # --- warmup (SDPA kernels, allocator; cudnn autotune if cudnn_benchmark) on synthetic frames
         t0 = time.perf_counter()
         self._warmup()
         self.log(f"warmup done in {time.perf_counter() - t0:.1f}s, chunk {self.stats['chunk_ms']:.0f}ms, "

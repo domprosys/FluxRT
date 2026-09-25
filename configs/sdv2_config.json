@@ -55,6 +55,6 @@
         "fp8": false,
         "output_fps": 0,
         "reset_after_gap_s": 2.0,
-        "cudnn_benchmark": true
+        "cudnn_benchmark": false
     }
 }
