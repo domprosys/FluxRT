@@ -744,15 +744,21 @@ class SDV2Worker(WorkerBase):
         # upstream's pipe.timestep aliases denoising_step_list, so the adaptive current_step
         # overwrote entry 0: restore the canonical schedule for the first (all-steps) chunk
         p._init_denoising_step_list(self.pcfg, self.device)
+        tm = [time.perf_counter()]
         self._empty_cache()  # batch size may have changed (steps); release old caches
         images = self._frames_to_tensor(frames)
         self._noise_scale = self.strength
         ns, _ = self._noise_step(images)
         noisy = self._encode_latents(images, ns)
+        self._sync(); tm.append(time.perf_counter())
         self.cur_start, self.cur_end = 0, 2 * self.fsl
         den = p.prepare(text_prompts=[self.prompt], device=self.device, dtype=self.dtype,
                         noise=noisy, current_start=self.cur_start, current_end=self.cur_end)
+        self._sync(); tm.append(time.perf_counter())
         out = self._decode(den)
+        self._sync(); tm.append(time.perf_counter())
+        ms = [round((b - a) * 1000) for a, b in zip(tm, tm[1:])]
+        self.log(f"reset: encode {ms[0]} ms, prepare {ms[1]} ms, decode {ms[2]} ms")
         self.cur_start = self.cur_end
         self.cur_end += self.fsl
         self._last_image = images[:, :, [-1]]
