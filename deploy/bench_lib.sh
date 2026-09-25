@@ -3,17 +3,18 @@
 # Every test writes $OUT/<name>.json (+ .log); failures are recorded and the run continues.
 PY=${PY:-.venv/bin/python}
 T_SECONDS=${T_SECONDS:-45}; T_WARMUP=${T_WARMUP:-10}
+T_SAMPLES=${T_SAMPLES:-60,120,180}  # input frame indices; sdv2 needs later ones (first output after ~12 s)
 
 ts() { date +%H:%M:%S; }
 say() { echo "[${TAG:-bench} $(ts)] $*"; }
 kill_workers() { pkill -9 -f "spawn_mai[n]|sd_worke[r]|sdv2_worke[r]"; sleep 3; }
 
-# T name config [extra test_backend args...]  (T_SECONDS / T_WARMUP override the durations)
+# T name config [extra test_backend args...]  (T_SECONDS / T_WARMUP / T_SAMPLES override the defaults)
 T() {
   local name=$1 cfg=$2; shift 2
   say "=== $name ($cfg $*)"
   timeout 1500 $PY scripts/test_backend.py --config "$cfg" --video "$CLIP" --seconds "$T_SECONDS" --warmup "$T_WARMUP" \
-    --samples 60,120,180 --json "$OUT/$name.json" --out "$OUT/$name" "$@" > "$OUT/$name.log" 2>&1
+    --samples "$T_SAMPLES" --json "$OUT/$name.json" --out "$OUT/$name" "$@" > "$OUT/$name.log" 2>&1
   local rc=$?
   grep -E "^BENCH" "$OUT/$name.log" | cut -c1-300 || { say "  $name FAILED rc=$rc"; grep -E "Error|Traceback|error" "$OUT/$name.log" | tail -5; }
   kill_workers

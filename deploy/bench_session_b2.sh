@@ -11,7 +11,7 @@ export HF_HOME=$WS/hf VENVS=${VENVS:-/root/venvs} PATH="$HOME/.local/bin:$PATH"
 cd "$WS/fluxrt" || exit 1
 TAG=sessB2
 source deploy/bench_lib.sh
-T_SECONDS=60 T_WARMUP=15
+T_SECONDS=60 T_WARMUP=15 T_SAMPLES=500,900,1300  # sdv2's first output comes ~12 s in
 
 T sdv2_14b_ns06      "$(cfgvar configs/sdv2_14b_config.json ns06 worker.noise_scale=0.6)"
 T sdv2_14b_ns06_norm "$(cfgvar configs/sdv2_14b_config.json ns06n worker.noise_scale=0.6 worker.normalize_latents=true)"

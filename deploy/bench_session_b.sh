@@ -32,7 +32,7 @@ df -hT "$WS" /workspace > "$OUT/disks.txt" 2>&1
 
 # ── stage 1: StreamDiffusionV2 1.3B ─────────────────────────────────────────────
 SKIP_SD=1 SKIP_SDV2=0 SKIP_FLUXRT_WEIGHTS=1 SDV2_14B=0 install sdv2 || exit 1
-T_SECONDS=60 T_WARMUP=15
+T_SECONDS=60 T_WARMUP=15 T_SAMPLES=500,900,1300  # sdv2's first output comes ~12 s in
 T sdv2          configs/sdv2_config.json
 T sdv2_static   configs/sdv2_config.json --static
 T sdv2_s1       "$(cfgvar configs/sdv2_config.json s1 worker.steps=1)"

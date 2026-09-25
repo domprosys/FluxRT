@@ -11,7 +11,7 @@ export HF_HOME=$WS/hf VENVS=${VENVS:-/root/venvs} PATH="$HOME/.local/bin:$PATH"
 cd "$WS/fluxrt" || exit 1
 TAG=sessB3
 source deploy/bench_lib.sh
-T_SECONDS=60 T_WARMUP=15
+T_SECONDS=60 T_WARMUP=15 T_SAMPLES=500,900,1300  # sdv2's first output comes ~12 s in
 SCENE="An astronaut in an orange NASA spacesuit with a chrome cyborg face and glowing blue eyes, smiling, an American flag and a model space shuttle behind her, studio portrait photo"
 
 T sdv2_nobench      "$(cfgvar configs/sdv2_config.json d_nobench worker.cudnn_benchmark=false)"
