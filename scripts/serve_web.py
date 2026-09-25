@@ -407,6 +407,8 @@ class Server:
         st = self.backend.stats()
         proc = float(st.get("proc_time_s") or 0.0)
         return {
+            **st,  # first: engine stats must not override the server's own fields (sdv2 reports
+                   # "resolution" as [w, h] and its own "out_fps")
             "backend": self.backend.name,
             "ready": self.backend.is_ready(),
             "alive": self.backend.alive(),
@@ -422,11 +424,11 @@ class Server:
             "cycle_interval_s": self.cycle_interval,
             "cycle_remaining_s": max(0.0, round(self._cycle_deadline - time.monotonic(), 1))
             if self.cycle_enabled else None,
-            "base_fps": round(1.0 / proc, 1) if proc > 0 else 0.0,
+            # generated frames per second; chunked engines (sdv2: 4 frames per call) report per-chunk time
+            "base_fps": round(int(st.get("chunk_size") or 1) / proc, 1) if proc > 0 else 0.0,
             "input_fps": round(self.input_fps(), 1),
             "out_fps": self.args.out_fps,
             "smoothing_alpha": self.alpha,
-            **st,
         }
 
 
