@@ -157,9 +157,10 @@ def main() -> int:
         # ── the pod's view: env, runpodctl, layout, logs ─────────────────────
         if ssh_ip and ssh_port:
             r = ra.ssh(ssh_ip, int(ssh_port), (
-                "env | grep -E '^(WS|IDLE_STOP_MIN|IDLE_ACTION|BACKEND_CONFIG|RUNPOD_POD_ID)=' | sort; "
-                "[ -n \"$RUNPOD_API_KEY\" ] && echo RUNPOD_API_KEY=set || echo RUNPOD_API_KEY=unset; "
-                "case \"${HF_TOKEN:-}\" in '') echo HF_TOKEN=unset;; *'{{'*) echo HF_TOKEN=UNRESOLVED;; *) echo HF_TOKEN=set;; esac; "
+                # the container's env (pid 1): ssh sessions don't inherit it; secrets reported as set/unset only
+                "tr '\\0' '\\n' < /proc/1/environ | grep -E '^(WS|IDLE_STOP_MIN|IDLE_ACTION|BACKEND_CONFIG|ENABLE_TRT|TRT_CACHE_REPO)=' | sort; "
+                "tr '\\0' '\\n' < /proc/1/environ | awk -F= '/^(HF_TOKEN|RUNPOD_API_KEY)=/{v=substr($0, length($1)+2); "
+                "print $1 \"=\" (v ~ /[{][{]/ ? \"UNRESOLVED\" : (length(v) ? \"set\" : \"empty\"))}'; "
                 "grep -h 'trt-cache' /workspace/logs/setup.log /workspace/logs/pod_start.log 2>/dev/null | tail -3; "
                 "command -v runpodctl && runpodctl version 2>&1 | head -1; echo ---; df -hT / /workspace; echo ---; "
                 "du -sh /root/ws/* /root/venvs 2>/dev/null | sort -h | tail -8; echo ---; cat /workspace/logs/netcheck.txt; "
