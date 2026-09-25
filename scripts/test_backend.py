@@ -122,7 +122,7 @@ def main():
             # first output at or after the target frame (some backends return None between new frames)
             for k in [k for k in pending_samples if n >= k]:
                 cv2.imwrite(str(out_dir / f"out_{pending_samples.pop(k):04d}.png"), out)
-        if in_bench and time.time() - last_stat >= 0.25:
+        if in_bench:  # every input frame (~25 Hz): short latency spikes show up in p99 / max
             st = be.stats()
             if st.get("proc_time_s"):
                 gen_samples.append(float(st["proc_time_s"]))
@@ -145,6 +145,10 @@ def main():
             "config": Path(a.config).stem, "backend": cfg.get("backend", "fluxrt"),
             "resolution": f"{w}x{h}", "ready_s": round(ready_s, 1), "prompt": prompt[:80],
             "gen_ms_p50": round(1000 * p50, 1) if p50 else None, "gen_ms_p95": round(1000 * p95, 1) if p95 else None,
+            "gen_ms_p99": round(1000 * pct(gen_samples, 0.99), 1) if gen_samples else None,
+            "gen_ms_max": round(1000 * max(gen_samples), 1) if gen_samples else None,
+            # share of samples slower than 1.5x the median (a spike lasts until the next frame is done)
+            "spike_frac": round(sum(v > 1.5 * p50 for v in gen_samples) / len(gen_samples), 4) if p50 else None,
             "gen_fps": round(1 / p50, 1) if p50 else None,
             "out_fps": round(out_changes / bench_secs, 1) if bench_secs else None,
             "gpu_mb": max(gpu_samples) if gpu_samples else stats.get("gpu_reserved_mb"),
