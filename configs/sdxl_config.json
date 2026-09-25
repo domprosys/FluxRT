@@ -27,7 +27,7 @@
         "variant": "fp16",
         "vae_id": "madebyollin/taesdxl",
         "t_index_list": [
-            22
+            32
         ],
         "num_inference_steps": 50,
         "acceleration": "none",
@@ -43,7 +43,7 @@
         "cache_interval": 1,
         "max_cache_maxframes": 8
     },
-    "_note": "SDXL-Turbo img2img, 1 step: t_index 22 of the 50-step LCM schedule = t~559 (strength ~0.56). Lower index = stronger style. acceleration: env SD_ACCELERATION=tensorrt (pod ENABLE_TRT=1) overrides it. use_cached_attn: StreamV2V temporal cache (see sd_worker.py docstring).",
+    "_note": "SDXL-Turbo img2img, 1 step: t_index 32 of the 50-step LCM schedule (strength ~0.36). Lower index = stronger style; without a ControlNet t_index 22 drifted off the input (new scenes within seconds, RTX PRO 6000 bench 2026-09-25), 32 keeps scene and pose. acceleration: env SD_ACCELERATION=tensorrt (pod ENABLE_TRT=1) overrides it. use_cached_attn: StreamV2V temporal cache (see sd_worker.py docstring).",
     "_alt_t_index_list_2step": [
         18,
         35
