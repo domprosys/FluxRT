@@ -102,8 +102,15 @@ fi
 kill "$STATUS_PID" 2>/dev/null; sleep 1
 cd "$REPO"
 setsid .venv/bin/python scripts/serve_web.py --config "configs/$CFG.json" --port 8000 > "$LOGS/server.log" 2>&1 < /dev/null &
-for i in $(seq 1 360); do
-  if curl -s -m 3 http://127.0.0.1:8000/api/state 2>/dev/null | grep -q '"ready": *true'; then
+# all_ready: exit 0 once every engine is ready (multi configs load several). The token gate covers localhost too.
+all_ready() {
+  curl -s -m 5 -H "X-Access-Token: ${ACCESS_TOKEN:-}" http://127.0.0.1:8000/api/state 2>/dev/null | python3 -c "
+import json, sys
+d = json.load(sys.stdin); e = d.get('engines')
+sys.exit(0 if d.get('ready') and (not e or all(x['ready'] for x in e)) else 1)" 2>/dev/null
+}
+for i in $(seq 1 720); do   # up to 60 min: a first TensorRT start builds engines for every SD engine
+  if all_ready; then
     log "READY in $(( $(date +%s) - T0 ))s total"
     if [ "${ENABLE_TRT:-0}" = 1 ] && [ "$(find "$WS/engines" -name '*.engine' 2>/dev/null | wc -l)" -gt "$N_ENG" ]; then
       log "new TensorRT engines were built: pushing them to the cache in the background"
@@ -113,4 +120,4 @@ for i in $(seq 1 360); do
   fi
   sleep 5
 done
-log "server did not report ready within 30 min — see $LOGS/server.log"
+log "server did not report every engine ready within 60 min — see $LOGS/server.log"
