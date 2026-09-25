@@ -12,6 +12,7 @@ or readme need a publish.
 """
 import base64
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -36,8 +37,11 @@ def desired() -> dict:
         "volumeInGb": 20,  # /workspace: logs only (it can be a network filesystem)
         "volumeMountPath": "/workspace",
         "ports": ["8000/http", "22/tcp"],
-        # multi_all: all four engines resident (RTX PRO 6000 class); stop the pod after 30 idle minutes
-        "env": {"BACKEND_CONFIG": "multi_all_config", "WS": "/root/ws", "IDLE_STOP_MIN": "30"},
+        # multi_all: all four engines resident (RTX PRO 6000 class); stop the pod after 30 idle minutes.
+        # HF_TOKEN comes from the RunPod secret "hf_token" (authenticated downloads + the TensorRT engine
+        # cache in TRT_CACHE_REPO, used when a deploy sets ENABLE_TRT=1)
+        "env": {"BACKEND_CONFIG": "multi_all_config", "WS": "/root/ws", "IDLE_STOP_MIN": "30",
+                "HF_TOKEN": "{{ RUNPOD_SECRET_hf_token }}", "TRT_CACHE_REPO": "alexcloak/fluxrt-trt-engines"},
         "readme": (HERE / "template_readme.md").read_text(),
     }
 
@@ -58,6 +62,15 @@ def live() -> dict:
     return d
 
 
+def missing_secrets(env: dict) -> list[str]:
+    """Names of RunPod secrets the env references ({{ RUNPOD_SECRET_<name> }}) that don't exist."""
+    wanted = set(re.findall(r"\{\{\s*RUNPOD_SECRET_(\w+)\s*\}\}", json.dumps(env)))
+    if not wanted:
+        return []
+    have = {s["name"] for s in ra.gql("{ myself { secrets { name } } }")["myself"]["secrets"]}
+    return sorted(wanted - have)
+
+
 def changes(cur: dict, want: dict) -> dict:
     return {k: v for k, v in want.items() if cur.get(k) != v}
 
@@ -75,6 +88,10 @@ def main() -> int:
         for k, v in diff.items():
             print(f"{k}: {json.dumps(masked({k: cur.get(k)})[k])[:200]}\n  -> {json.dumps(masked({k: v})[k])[:200]}")
         if cmd == "publish":
+            gone = missing_secrets(want["env"])
+            if gone:
+                print(f"not published: create the RunPod secret(s) {gone} first (console: Secrets)")
+                return 1
             code, d = ra._request(f"{ra.REST}/templates/{TEMPLATE_ID}", "PATCH", diff)
             print(f"PATCH -> HTTP {code}")
             if code not in (200, 201):
