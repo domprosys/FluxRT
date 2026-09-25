@@ -1,0 +1,94 @@
+{
+    "_note_faceidplus": "FaceID-PlusV2: InsightFace identity + CLIP embedding of the face crop (Diffusers_IPAdapter detects 'plus' checkpoints and uses the v2 shortcut). Plain FaceID locked an identity but gave no real likeness in the 2026-09-25 bench (scale 0.8 and 1.2 looked the same). Untested yet.",
+    "backend": "sd",
+    "python": "../StreamDiffusion-daydream/.venv/bin/python",
+    "worker_cwd": "../StreamDiffusion-daydream",
+    "resolution": {
+        "width": 512,
+        "height": 512
+    },
+    "default_prompt": "portrait of a person as an anime character, vibrant colors, clean line art",
+    "prompt_cycle": [
+        "portrait of a person as an anime character, vibrant colors, clean line art",
+        "portrait of a person as a renaissance oil painting, dramatic chiaroscuro",
+        "portrait of a person as a comic book hero, bold ink lines, halftone dots",
+        "portrait of a person in cyberpunk style, neon magenta and cyan light",
+        "portrait of a person as a white marble statue, carved stone",
+        "portrait of a person as a watercolor painting, soft washes",
+        "portrait of a person as a claymation figure, plasticine",
+        "portrait of a person as a graphite pencil sketch"
+    ],
+    "prompt_cycle_interval_s": 20,
+    "input_smoothing_alpha": 1.0,
+    "worker_env": {
+        "TOKENIZERS_PARALLELISM": "false"
+    },
+    "worker": {
+        "model_id": "Lykon/dreamshaper-8",
+        "use_lcm_lora": true,
+        "t_index_list": [
+            18,
+            35
+        ],
+        "num_inference_steps": 50,
+        "acceleration": "none",
+        "use_tiny_vae": true,
+        "cfg_type": "self",
+        "guidance_scale": 1.2,
+        "delta": 0.8,
+        "seed": 2,
+        "use_denoising_batch": true,
+        "negative_prompt": "",
+        "engine_dir": "engines",
+        "controlnets": [
+            {
+                "name": "depth",
+                "model_id": "lllyasviel/control_v11f1p_sd15_depth",
+                "preprocessor": "depth",
+                "preprocessor_params": {
+                    "model_name": "depth-anything/Depth-Anything-V2-Small-hf",
+                    "detect_resolution": 378
+                },
+                "conditioning_scale": 0.5,
+                "enabled": true
+            },
+            {
+                "name": "canny",
+                "model_id": "lllyasviel/control_v11p_sd15_canny",
+                "preprocessor": "canny",
+                "preprocessor_params": {
+                    "low_threshold": 100,
+                    "high_threshold": 200
+                },
+                "conditioning_scale": 0.3,
+                "enabled": true
+            }
+        ],
+        "use_ipadapter": true,
+        "ipadapter": {
+            "type": "faceid",
+            "ipadapter_model_path": "h94/IP-Adapter-FaceID/ip-adapter-faceid-plusv2_sd15.bin",
+            "image_encoder_path": "h94/IP-Adapter/models/image_encoder",
+            "insightface_model_name": "buffalo_l",
+            "scale": 0.8,
+            "num_image_tokens": 16,
+            "reference_image": null
+        },
+        "use_cached_attn": false,
+        "cache_maxframes": 2,
+        "cache_interval": 1,
+        "max_cache_maxframes": 8
+    },
+    "_note": "Dreamshaper-8 + LCM, depth+canny, IP-Adapter FaceID (plain FaceID; the FaceID-Plus checkpoints are not loadable by Diffusers_IPAdapter). No identity until set_param faceid_capture=true (locks onto the face in the next input frame) or ipadapter_image=<path>; reference_image sets one at start. Needs deploy/setup_faceid.sh (bootstrap: WITH_FACEID, derived from use_ipadapter).",
+    "hf_models": [
+        "Lykon/dreamshaper-8::model_index.json,scheduler/*,tokenizer/*,feature_extractor/*,safety_checker/config.json,safety_checker/model.safetensors,text_encoder/config.json,text_encoder/model.safetensors,unet/config.json,unet/diffusion_pytorch_model.safetensors,vae/config.json,vae/diffusion_pytorch_model.safetensors",
+        "latent-consistency/lcm-lora-sdv1-5::pytorch_lora_weights.safetensors",
+        "madebyollin/taesd::config.json,diffusion_pytorch_model.safetensors",
+        "depth-anything/Depth-Anything-V2-Small-hf",
+        "lllyasviel/control_v11f1p_sd15_depth::config.json,diffusion_pytorch_model.safetensors",
+        "lllyasviel/control_v11p_sd15_canny::config.json,diffusion_pytorch_model.safetensors",
+        "h94/IP-Adapter-FaceID::ip-adapter-faceid-plusv2_sd15.bin",
+        "h94/IP-Adapter::models/image_encoder/config.json,models/image_encoder/model.safetensors",
+        "public-data/insightface::models/buffalo_l/det_10g.onnx,models/buffalo_l/w600k_r50.onnx"
+    ]
+}

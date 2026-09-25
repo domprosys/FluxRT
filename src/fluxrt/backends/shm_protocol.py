@@ -24,6 +24,7 @@ Control path:
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import os
 import queue
@@ -247,6 +248,12 @@ class WorkerBase:
         except Exception:  # noqa: BLE001
             self.emit("error", msg=f"setup failed: {traceback.format_exc()}")
             return 1
+        # Move everything setup created (models, modules: millions of objects) out of the cyclic GC's
+        # reach, so its periodic full collections don't pause the frame loop for tens of ms.
+        # FLUXRT_GC_FREEZE=0 disables this (A/B for the latency spikes seen on 2026-09-25).
+        if os.environ.get("FLUXRT_GC_FREEZE", "1") != "0":
+            gc.collect()
+            gc.freeze()
         self.meta.set("ready", 1)
         self.meta.set("gpu_mb", self.gpu_mb())
         self.emit("ready")
