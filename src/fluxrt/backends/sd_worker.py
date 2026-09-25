@@ -532,6 +532,8 @@ class SDWorker(WorkerBase):
         self.torch = torch
         w = dict(self.cfg.get("worker") or {})
         self.wcfg = w
+        self._stage_timing = os.environ.get("FLUXRT_STAGE_TIMING") == "1"  # syncs the GPU per stage: diagnosis only
+        self._stages = {"controls": [], "stream": [], "t": time.time()}
         self.model_id = w.get("model_id", "stabilityai/sd-turbo")
         is_turbo = "turbo" in self.model_id.lower()
         self.is_sdxl = bool(w.get("sdxl", "xl" in self.model_id.lower()))
@@ -718,12 +720,19 @@ class SDWorker(WorkerBase):
                 self._ip_apply(frame_bgr, "capture")
             except Exception as e:  # noqa: BLE001
                 self.emit("error", msg=f"faceid capture failed: {e}")
+        timing = self._stage_timing
         with torch.inference_mode():
             x = torch.from_numpy(frame_bgr).to("cuda", non_blocking=True)
             x = x.flip(-1).permute(2, 0, 1).unsqueeze(0).to(torch.float16).div_(255.0)  # 1x3xHxW RGB [0,1]
+            if timing:
+                torch.cuda.synchronize(); t0 = time.perf_counter()
             if self.cn is not None:
                 self._update_controls(x)  # the camera frame is also the control image
+            if timing:
+                torch.cuda.synchronize(); t1 = time.perf_counter()
             y = self.stream(image=x)  # 1x3xHxW (or 3xHxW) RGB [0,1]
+            if timing:
+                torch.cuda.synchronize(); self._record_stages(t1 - t0, time.perf_counter() - t1)
             if y.dim() == 4:
                 y = y[0]
             if y.shape[1] != self.out_height or y.shape[2] != self.out_width:
@@ -733,6 +742,20 @@ class SDWorker(WorkerBase):
                 )[0]
             out = (y.clamp(0, 1) * 255.0).round().to(torch.uint8).flip(0).permute(1, 2, 0).contiguous()
             return out.cpu().numpy()
+
+    def _record_stages(self, controls_s: float, stream_s: float) -> None:
+        """FLUXRT_STAGE_TIMING=1: every 10 s, log the distribution of the two stages of a frame."""
+        st = self._stages
+        st["controls"].append(controls_s * 1000)
+        st["stream"].append(stream_s * 1000)
+        if time.time() - st["t"] < 10:
+            return
+        def fmt(v):
+            v = sorted(v)
+            return f"p50 {v[len(v) // 2]:.1f} p90 {v[int(len(v) * 0.9)]:.1f} max {v[-1]:.1f}"
+        self.log(f"stages over {len(st['stream'])} frames: controls {fmt(st['controls'])} | "
+                 f"unet+vae {fmt(st['stream'])} ms")
+        self._stages = {"controls": [], "stream": [], "t": time.time()}
 
     # ── cached attention ──────────────────────────────────────────────────────
     def _cached_attn_config(self, w: dict) -> dict | None:
