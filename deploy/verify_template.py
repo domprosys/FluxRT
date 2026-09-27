@@ -176,7 +176,7 @@ def main() -> int:
             say("waiting for the engine-cache upload (trt_cache_push.log)")
             while time.time() < until:
                 r = ra.ssh(ssh_ip, int(ssh_port), "cat /workspace/logs/trt_cache_push.log 2>/dev/null; "
-                           "pgrep -f 'trt_engine_cache.sh push' >/dev/null && echo RUNNING || echo IDLE", timeout=60)
+                           "pgrep -f 'trt_engine_cache.s[h] push' >/dev/null && echo RUNNING || echo IDLE", timeout=60)
                 out = r.stdout.strip()
                 if "pushed" in out or ("IDLE" in out and out != "IDLE"):
                     res["cache_push"] = out.replace("IDLE", "").strip()[-300:]
