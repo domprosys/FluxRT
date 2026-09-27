@@ -41,7 +41,8 @@ def desired() -> dict:
         # HF_TOKEN comes from the RunPod secret "hf_token" (authenticated downloads + the TensorRT engine
         # cache in TRT_CACHE_REPO, used when a deploy sets ENABLE_TRT=1)
         "env": {"BACKEND_CONFIG": "multi_all_config", "WS": "/root/ws", "IDLE_STOP_MIN": "30",
-                "HF_TOKEN": "{{ RUNPOD_SECRET_hf_token }}", "TRT_CACHE_REPO": "alexcloak/fluxrt-trt-engines"},
+                "HF_TOKEN": "{{ RUNPOD_SECRET_hf_token }}", "TRT_CACHE_REPO": "alexcloak/fluxrt-trt-engines",
+                "ENABLE_TRT": "1"},  # engines come from the cache (47 s for 13 GB); a new GPU type builds once
         "readme": (HERE / "template_readme.md").read_text(),
     }
 
