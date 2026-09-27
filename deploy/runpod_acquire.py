@@ -150,7 +150,7 @@ def _create(cfg: dict, cand: dict) -> tuple[str | None, dict | str]:
             "dataCenterIds": [cand["dc"]], "containerDiskInGb": container,
             "volumeInGb": 0 if cand.get("volume") else (disk or 150),
             "volumeMountPath": "/workspace", "ports": p["ports"],
-            "supportPublicIp": True, "env": p.get("env", {})}
+            "supportPublicIp": True, "env": {**p.get("env", {}), **cfg.get("_env", {})}}
     if cand.get("volume"):
         body["networkVolumeId"] = cand["volume"]
     code, data = _request(f"{REST}/pods", "POST", body)
@@ -301,6 +301,8 @@ def main() -> int:
     a.add_argument("--no-volume", action="store_true", help="any region, pod-local disk (cold setup)")
     a.add_argument("--gpus", default=None, help="comma-separated GPU short names to allow, e.g. PRO6000-S,PRO6000-W")
     a.add_argument("--disk-gb", type=int, default=0, help="pod-local /workspace size for --no-volume (default 150)")
+    a.add_argument("--env", action="append", default=[], metavar="KEY=VALUE",
+                   help="extra pod env, e.g. 'HF_TOKEN={{ RUNPOD_SECRET_hf_token }}'")
     a.add_argument("--container-gb", type=int, default=0,
                    help="container disk size (local; /workspace can be a network fs even without a volume)")
     r = sub.add_parser("release")
@@ -343,6 +345,7 @@ def main() -> int:
             cfg["_disk_gb"] = args.disk_gb
         if args.container_gb:
             cfg["_container_gb"] = args.container_gb
+        cfg["_env"] = dict(kv.split("=", 1) for kv in args.env)
         pod = acquire(cfg, timeout_min=args.timeout, no_volume=args.no_volume,
                       gpu_filter=args.gpus.split(",") if args.gpus else None)
     except Exception:
