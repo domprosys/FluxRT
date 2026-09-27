@@ -10,6 +10,7 @@ export WS=${WS:-/root/ws}
 OUT=${3:-$WS/sessD}
 export HF_HOME=$WS/hf VENVS=${VENVS:-/root/venvs} PATH="$HOME/.local/bin:$PATH"
 export OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 FLUXRT_THREADS=4
+export TRT_CACHE_REPO=alexcloak/fluxrt-trt-engines
 eval "$(tr '\0' '\n' < /proc/1/environ | grep -E '^(HF_TOKEN|TRT_CACHE_REPO)=' | sed "s/^\([A-Z_]*\)=\(.*\)$/export \1='\2'/")"
 cd "$WS/fluxrt" || exit 1
 mkdir -p "$OUT"
